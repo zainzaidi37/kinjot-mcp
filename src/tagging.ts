@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 /**
  * Tag hygiene is enforced in code, not in tool descriptions: lowercase,
@@ -34,14 +34,17 @@ export function normalizeTags(tags: string[], vocabulary?: string[]): string[] {
  * agent, so it is always present and consistently spelled. MCP hosts spawn
  * stdio servers in the session's working directory: walk up to the git
  * toplevel and use its basename, falling back to the directory itself when
- * not inside a repo.
+ * not inside a repo. A ceiling leaves the start directory eligible, but the
+ * walk never enters the ceiling directory or its parents. Without a ceiling,
+ * the walk continues to the filesystem root as before.
  */
-export function detectRepoTag(startDir = process.cwd()): string | null {
+export function detectRepoTag(startDir = process.cwd(), ceiling?: string): string | null {
   let dir = startDir;
+  const ceilingDir = ceiling === undefined ? undefined : resolve(ceiling);
   for (;;) {
     if (existsSync(join(dir, '.git'))) return normalizeTags([basename(dir)])[0] ?? null;
     const parent = dirname(dir);
-    if (parent === dir) break;
+    if (parent === dir || (ceilingDir !== undefined && resolve(parent) === ceilingDir)) break;
     dir = parent;
   }
   return normalizeTags([basename(startDir)])[0] ?? null;

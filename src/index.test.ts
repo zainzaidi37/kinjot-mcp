@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { ApiError, NotesApi } from './api.js';
@@ -646,27 +646,59 @@ describe('normalizeTags', () => {
 
 describe('detectRepoTag', () => {
   const root = mkdtempSync(join(tmpdir(), 'kinjot-repo-'));
+  const ceiling = join(root, 'ceiling');
+  mkdirSync(ceiling);
+  mkdirSync(join(root, '.git'));
   afterAll(() => rmSync(root, { recursive: true, force: true }));
 
   it('uses the git toplevel basename from a nested cwd', () => {
-    const repo = join(root, 'My Repo');
+    const repo = join(ceiling, 'My Repo');
     mkdirSync(join(repo, '.git'), { recursive: true });
     const nested = join(repo, 'packages', 'deep');
     mkdirSync(nested, { recursive: true });
-    expect(detectRepoTag(nested)).toBe('my-repo');
+    expect(detectRepoTag(nested, ceiling)).toBe('my-repo');
   });
 
   it('treats a .git file (worktree) as a repo marker', () => {
-    const repo = join(root, 'worktree-repo');
+    const repo = join(ceiling, 'worktree-repo');
     mkdirSync(repo, { recursive: true });
     writeFileSync(join(repo, '.git'), 'gitdir: elsewhere');
-    expect(detectRepoTag(repo)).toBe('worktree-repo');
+    expect(detectRepoTag(repo, ceiling)).toBe('worktree-repo');
   });
 
   it('falls back to the start directory basename outside a repo', () => {
-    const plain = join(root, 'Plain Project');
+    const plain = join(ceiling, 'Plain Project');
     mkdirSync(plain, { recursive: true });
-    expect(detectRepoTag(plain)).toBe('plain-project');
+    expect(detectRepoTag(plain, ceiling)).toBe('plain-project');
+  });
+
+  it('ignores a .git above the ceiling', () => {
+    const plain = join(ceiling, 'Above Boundary');
+    mkdirSync(plain);
+    expect(detectRepoTag(plain, ceiling)).toBe('above-boundary');
+  });
+
+  it('ignores a .git in the ceiling directory itself', () => {
+    const markedCeiling = join(root, 'marked-ceiling');
+    const plain = join(markedCeiling, 'Inside Boundary');
+    mkdirSync(join(markedCeiling, '.git'), { recursive: true });
+    mkdirSync(plain);
+    expect(detectRepoTag(plain, markedCeiling)).toBe('inside-boundary');
+    expect(detectRepoTag(markedCeiling, markedCeiling)).toBe('marked-ceiling');
+  });
+
+  it('finds a .git just below the ceiling', () => {
+    const repo = join(ceiling, 'Boundary Repo');
+    const nested = join(repo, 'child');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    mkdirSync(nested);
+    expect(detectRepoTag(nested, ceiling)).toBe('boundary-repo');
+  });
+
+  it('finds the planted .git above when no ceiling is passed', () => {
+    const plain = join(ceiling, 'No Ceiling');
+    mkdirSync(plain);
+    expect(detectRepoTag(plain)).toBe(basename(root).toLowerCase());
   });
 });
 
