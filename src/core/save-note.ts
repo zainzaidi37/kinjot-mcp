@@ -80,7 +80,11 @@
  *    JavaScript's `String.prototype.trim` strips every Unicode whitespace
  *    character, tabs and newlines included. A folder sent as `"\tWork\t"` is
  *    stored by Postgres with its tabs intact, so {@link pgTrimSpaces} is what
- *    this module uses everywhere the SQL says `trim`.
+ *    this module uses for the folder lookup, the stored folder name and tags.
+ *    The one exception is the reserved-name refusal, which follows the web's
+ *    JavaScript `trim()` (so `"Trash\t"` is refused, as the web would read it
+ *    as Trash), as the SQL has since
+ *    `20260927220000_mcp_save_note_trash_spelling.sql` (#679).
  * 3. **The folder lookup compares `lower(name)`, not `lower(trim(name))`.**
  *    An existing folder stored as `" Work "` is not found by the input
  *    `"Work"`, and a second folder is created.
@@ -128,7 +132,11 @@
 export const SAVE_NOTE_SOURCES = ['mcp', 'cli'] as const;
 export type SaveNoteSource = (typeof SAVE_NOTE_SOURCES)[number];
 
-/** The reserved folder name, rejected in any case and with any padding. */
+/**
+ * The reserved folder name, refused in any case and with any padding
+ * JavaScript's `trim()` strips: the web's rule for what Trash is, and the
+ * SQL's. The folder lookup and the stored name still trim spaces only.
+ */
 export const RESERVED_FOLDER_NAME = 'trash';
 
 /** The `tag_vocab` projection's row cap. */
@@ -303,7 +311,7 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
   }
 
   const folder = input.folder ?? null;
-  if (folder !== null && pgTrimSpaces(folder).toLowerCase() === RESERVED_FOLDER_NAME) {
+  if (folder !== null && folder.trim().toLowerCase() === RESERVED_FOLDER_NAME) {
     throw new SaveNotePlanError('invalid_folder');
   }
 

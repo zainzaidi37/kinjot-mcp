@@ -166,6 +166,19 @@ describe('saveNoteLocally', () => {
     expect(rows(library, 'folders')).toHaveLength(0);
   });
 
+  it('rejects a Trash spelling the web reads as Trash, without writing anything', () => {
+    // The web's rule is JavaScript's trim(), which strips more than spaces.
+    // This runs the vendored planner, the copy local mode actually loads.
+    for (const folder of ['Trash\t', '\u00a0trash', 'trash\u3000']) {
+      expect(
+        () => saveNoteLocally(library, { title: 'x', body: '', folder }),
+        JSON.stringify(folder),
+      ).toThrow(/invalid_folder/);
+    }
+    expect(rows(library, 'notes')).toHaveLength(0);
+    expect(rows(library, 'folders')).toHaveLength(0);
+  });
+
   it('stores SQL-metacharacter content literally — values are bound, never interpolated', () => {
     // The applier builds its SQL from schema-derived identifiers and binds
     // every value; this pins that property against a future regression that
