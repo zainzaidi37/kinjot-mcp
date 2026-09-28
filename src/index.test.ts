@@ -781,17 +781,268 @@ describe('buildServer', () => {
     const tools = registeredTools(buildServer(api, '0.0.0-test', { repoTag: null }));
     for (const name of ['find_jots', 'list_recent_jots', 'recall_jots'] as const) {
       expect(tools[name]!.description).toContain(
-        'Notes tagged autosave (the tag used for autosave sessions) are left out; get_jot still reads one when the user gives its label.',
+        'Notes tagged autosave are left out; get_jot still reads one when the user gives its label.',
       );
     }
   });
 
-  it('jot and edit_jot reserve autosave for sessions, not topic tags', () => {
-    const tools = registeredTools(buildServer(api, '0.0.0-test', { repoTag: null }));
-    const rule =
+  describe('T3: jot and edit_jot leave out the reserved autosave tag', () => {
+    const oldRule =
       'The autosave tag is reserved for autosave sessions; never use it as a topic tag, because notes carrying it are left out of search.';
-    expect(tools.jot!.description).toContain(rule);
-    expect(tools.edit_jot!.description).toContain(rule);
+    const config = { apiUrl: 'https://api.example', apiKey: GOOD_KEY };
+    const saved = { note: { id: 'n1', title: 'first', created_at: 'now' } };
+    const edited = { note: { id: 'n1', short_id: 1, title: 'Title', updated_at: 'now' } };
+
+    it('removes the old sentence from both descriptions', () => {
+      const tools = registeredTools(buildServer(api, '0.0.0-test', { repoTag: null }));
+      expect(tools.jot!.description.includes(oldRule)).toBe(false);
+      expect(tools.edit_jot!.description.includes(oldRule)).toBe(false);
+    });
+
+    it('filters agent tags and the repo tag before saving, with an exact notice', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, saved));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: 'my-repo',
+      });
+      const result = await registeredTools(server).jot!.handler(
+        { title: 'first', body: 'body', tags: ['Autosave', '#autosave', ' infra '] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'save_note',
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        title: 'first',
+        body: 'body',
+        tags: ['infra', 'my-repo'],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe(
+        'Jotted "first" (id n1, tags: infra, my-repo). Left out the autosave tag: it is reserved for autosave sessions.',
+      );
+    });
+
+    it('saves ordinary tags without a notice', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, saved));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).jot!.handler(
+        { title: 'first', body: 'body', tags: ['infra'] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'save_note',
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        title: 'first',
+        body: 'body',
+        tags: ['infra'],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe('Jotted "first" (id n1, tags: infra).');
+    });
+
+    it('filters a repo literally named autosave', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, saved));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: 'autosave',
+      });
+      const result = await registeredTools(server).jot!.handler(
+        { title: 'first', body: 'body' },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'save_note',
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        title: 'first',
+        body: 'body',
+        tags: [],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe(
+        'Jotted "first" (id n1, tags: none). Left out the autosave tag: it is reserved for autosave sessions.',
+      );
+    });
+
+    it.each([
+      ['only autosave', { add_tags: ['autosave'] }],
+      ['empty remove_tags', { add_tags: ['autosave'], remove_tags: [] }],
+      ['hash-only remove_tags', { add_tags: ['autosave'], remove_tags: ['#'] }],
+      ['blank kept tag', { add_tags: ['autosave', '  '] }],
+    ])('refuses an edit with %s and no other change', async (_name, input) => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, edited));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).edit_jot!.handler({ id: 'A10', ...input }, {});
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toBe(
+        'Error: Nothing changed: the autosave tag is reserved for autosave sessions.',
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(0);
+    });
+
+    it.each(['new_string', 'old_string'] as const)(
+      'passes %s alone to the backend and returns its pairing error',
+      async (field) => {
+        const message =
+          'old_string and new_string must be supplied together; old_string cannot be empty';
+        const fetchMock = vi.fn(async () => jsonResponse(400, { error: message }));
+        const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+          repoTag: null,
+        });
+        const result = await registeredTools(server).edit_jot!.handler(
+          { id: 'A10', add_tags: ['autosave'], [field]: 'text' },
+          {},
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const body = JSON.parse(
+          (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+        );
+        expect(body).toEqual({ action: 'edit_note', short_id: 1, [field]: 'text', source: 'mcp' });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]!.text).toBe(`Error: ${message}`);
+      },
+    );
+
+    it('sends the remaining tag and title, then gives the notice', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, edited));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).edit_jot!.handler(
+        { id: 'A10', add_tags: ['autosave', 'x'], title: 'Title' },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'edit_note',
+        short_id: 1,
+        title: 'Title',
+        add_tags: ['x'],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe(
+        'Edited A10 "Title". Left out the autosave tag: it is reserved for autosave sessions.',
+      );
+    });
+
+    it('passes remove_tags through without a notice', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, edited));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).edit_jot!.handler(
+        { id: 'A10', remove_tags: ['autosave'] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'edit_note',
+        short_id: 1,
+        remove_tags: ['autosave'],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe('Edited A10 "Title".');
+    });
+
+    // Each condition of the "nothing else to do" check, from the side that must still send.
+    it.each([
+      ['an empty title', { title: '' }],
+      ['a folder move', { folder: 'Work' }],
+      ['a tag removal', { remove_tags: ['x'] }],
+      ['a content edit', { old_string: 'a', new_string: 'b' }],
+    ])('keeps an edit that adds autosave alongside %s', async (_name, change) => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, edited));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).edit_jot!.handler(
+        { id: 'A10', add_tags: ['autosave'], ...change },
+        {},
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({ action: 'edit_note', short_id: 1, ...change, source: 'mcp' });
+      expect(result.content[0]!.text).toBe(
+        'Edited A10 "Title". Left out the autosave tag: it is reserved for autosave sessions.',
+      );
+    });
+
+    it('adds an ordinary tag without a notice', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, edited));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).edit_jot!.handler(
+        { id: 'A10', add_tags: ['x'] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({ action: 'edit_note', short_id: 1, add_tags: ['x'], source: 'mcp' });
+      expect(result.content[0]!.text).toBe('Edited A10 "Title".');
+    });
+
+    it('keeps tags that only contain autosave, and drops ##autosave', async () => {
+      const fetchMock = vi.fn(async () => jsonResponse(200, saved));
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).jot!.handler(
+        { title: 'first', body: 'body', tags: ['autosave-notes', 'autosaved', '##autosave'] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body.tags).toEqual(['autosave-notes', 'autosaved']);
+      expect(result.content[0]!.text).toBe(
+        'Jotted "first" (id n1, tags: autosave-notes, autosaved). Left out the autosave tag: it is reserved for autosave sessions.',
+      );
+    });
+
+    it('omits #autosave from the vocabulary hint', async () => {
+      const fetchMock = vi.fn(async () =>
+        jsonResponse(200, { ...saved, existing_tags: ['#autosave', 'DB'] }),
+      );
+      const server = buildServer(new NotesApi(config, fetchMock as typeof fetch), 'test', {
+        repoTag: null,
+      });
+      const result = await registeredTools(server).jot!.handler(
+        { title: 'first', body: 'body', tags: ['seed'] },
+        {},
+      );
+      const body = JSON.parse(
+        (fetchMock.mock.calls[0]! as unknown as [string, RequestInit])[1].body as string,
+      );
+      expect(body).toEqual({
+        action: 'save_note',
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        title: 'first',
+        body: 'body',
+        tags: ['seed'],
+        source: 'mcp',
+      });
+      expect(result.content[0]!.text).toBe(
+        'Jotted "first" (id n1, tags: seed).\nThe user\'s existing tags include: DB — reuse these exact names on future jots.',
+      );
+    });
   });
 
   it('CLI help and README name the discovery exclusion and direct read', () => {
@@ -1047,7 +1298,7 @@ describe('buildServer', () => {
     expect(second.content[0]!.text).toContain('tags: Authentication');
   });
 
-  it('jot does not hint or cache reserved tags, while forwarding an explicitly supplied tag', async () => {
+  it('jot does not hint, cache or save reserved tags', async () => {
     const responseTags = [' autosave ', 'DB', 'AuToSaVe', 'topic'];
     const fetchMock = vi
       .fn()
@@ -1081,9 +1332,9 @@ describe('buildServer', () => {
     const request = JSON.parse(
       (fetchMock.mock.calls[1]! as unknown as [string, RequestInit])[1].body as string,
     );
-    expect(request.tags).toEqual(['autosave', 'DB']);
+    expect(request.tags).toEqual(['DB']);
     expect(second.content[0]!.text).toBe(
-      'Jotted "second" (id n2, tags: autosave, DB).\nThe user\'s existing tags include: DB, topic — reuse these exact names on future jots.',
+      'Jotted "second" (id n2, tags: DB). Left out the autosave tag: it is reserved for autosave sessions.\nThe user\'s existing tags include: DB, topic — reuse these exact names on future jots.',
     );
   });
 
@@ -1210,7 +1461,7 @@ describe('buildServer', () => {
     }
   });
 
-  it('list_recent_jots leads with a label and falls back to a prefix', async () => {
+  it('T5: list_recent_jots keeps its two-note result without a footer', async () => {
     const longId = '341233ac-82e5-4f0c-ad95-dceb5b68df47';
     const payload = {
       notes: [
@@ -1238,6 +1489,9 @@ describe('buildServer', () => {
       { repoTag: null },
     );
     const text = (await registeredTools(server).list_recent_jots!.handler({}, {})).content[0]!.text;
+    expect(text).toBe(
+      'A10  nginx fix (infra) — 2026-07-06 — reverse proxy timeout tuning\nbbccddee  sql notes — 2026-07-06',
+    );
     // The label leads when present; the full UUID never appears.
     expect(text).toContain('A10  nginx fix (infra) — 2026-07-06 — reverse proxy timeout tuning');
     expect(text).not.toContain(longId);
@@ -1277,7 +1531,7 @@ describe('buildServer', () => {
     expect(body.id).toBe('341233ac');
   });
 
-  it('recall_jots lists compact candidates with similarity and gist, no bodies', async () => {
+  it('T4: recall_jots lists compact candidates with the exact header and footer', async () => {
     const payload = {
       matches: [
         {
@@ -1298,12 +1552,33 @@ describe('buildServer', () => {
     );
     const text = (await registeredTools(server).recall_jots!.handler({ query: 'kong broken' }, {}))
       .content[0]!.text;
+    expect(text).toBe(
+      'Closest jots by meaning (similarity 0-1; below ~0.4 is no real match):\n' +
+        'A10  [0.81] Supabase local gotcha — db reset breaks Kong; stop/start fixes it\n' +
+        'n2  [0.31] (untitled)\n' +
+        'Read one in full with get_jot before relying on it. ' +
+        'A jot saved in the last few seconds may not be indexed yet: do not treat its absence as meaningful, and retry once if you expect it to match.',
+    );
     expect(text).toContain(
       'A10  [0.81] Supabase local gotcha — db reset breaks Kong; stop/start fixes it',
     );
     expect(text).toContain('n2  [0.31] (untitled)');
     expect(text).toContain('get_jot');
     expect(text).not.toContain('body');
+  });
+
+  it('T4: recall_jots has the exact empty result with the freshness caution', async () => {
+    const server = buildServer(
+      new NotesApi({ apiUrl: 'https://api.example', apiKey: GOOD_KEY }, (async () =>
+        jsonResponse(200, { matches: [] })) as typeof fetch),
+      '0.0.0-test',
+      { repoTag: null },
+    );
+    const text = (await registeredTools(server).recall_jots!.handler({ query: 'kong broken' }, {}))
+      .content[0]!.text;
+    expect(text).toBe(
+      'No jots found for "kong broken". A jot saved in the last few seconds may not be indexed yet: do not treat its absence as meaningful, and retry once if you expect it to match.',
+    );
   });
 
   it("get_jot's input schema admits a 3-character label and refuses shorter", () => {

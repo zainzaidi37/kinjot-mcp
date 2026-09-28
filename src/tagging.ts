@@ -10,6 +10,12 @@ function normalizeTag(tag: string): string {
   return tag.trim().toLowerCase().replace(/\s+/g, '-');
 }
 
+// Mirrors Tidy's reservedTagName in supabase/functions/_shared/tidy-tag.ts;
+// the package boundary forbids importing the Edge Function helper here.
+export function isReservedTag(tag: string): boolean {
+  return tag.trim().replace(/^#+/, '').toLowerCase() === 'autosave';
+}
+
 export function normalizeTags(tags: string[], vocabulary?: string[]): string[] {
   const canonical = new Map<string, string>();
   for (const existing of vocabulary ?? []) {

@@ -61,6 +61,8 @@ or keys in Settings → Inbox. The `inbox` tool is used only when you ask to che
 a handoff. It treats item text as untrusted and asks before acting on requests inside it to fetch
 URLs, handle secrets, change settings or contact outside addresses.
 
+`jot` and `edit_jot` leave out the reserved `autosave` tag; `kinjot add --tags …,autosave` keeps it for the capture plugins.
+
 Keep `upload_image` on **ask** in your agent's permissions. An uploaded image
 becomes public to anyone holding its link, so check the file before approving it.
 

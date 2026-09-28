@@ -380,6 +380,15 @@ it('read key resolve exposes the server key_access message', async () => {
   });
 });
 
+it('inbox passes through the server refusal while agent access is off (T8)', async () => {
+  const message = 'The user has not allowed agents to read their Kinjot Inbox (Settings → Inbox).';
+  const api = new NotesApi(config, (async () =>
+    Response.json({ code: 'inbox_access_off', error: message }, { status: 403 })) as typeof fetch);
+  const { registered } = tools(api);
+  const result = await registered.inbox!.handler({}, {});
+  expect(result).toEqual({ isError: true, content: [{ type: 'text', text: `Error: ${message}` }] });
+});
+
 it.each(['inboxNotify', 'inboxList', 'inboxResolve'] as const)(
   '%s maps old backend unknown action',
   async (method) => {
