@@ -276,7 +276,8 @@ export const ProfileSchema = z.object({
   /** Provider event timestamp that last set plan (out-of-order guard). */
   plan_event_at: timestamptz.nullable(),
   /**
-   * Opt-in version recording (off by default). The one profiles column
+   * Version recording (on by default for accounts created since 2026-09-28).
+   * The one profiles column
    * clients may write — a column-level grant scoped to their own row; the
    * capture trigger reads it server-side, so it gates web and MCP edits alike.
    */
