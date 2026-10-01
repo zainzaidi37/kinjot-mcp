@@ -233,6 +233,7 @@ export interface PlannedFolderRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly deleted_at: null;
+  readonly pinned_at: null;
 }
 
 export interface PlannedTagRow {
@@ -334,6 +335,7 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
           name: wanted,
           parent_id: null,
           ...stamps,
+          pinned_at: null,
         };
         folderId = row.id;
         ops.push({ table: 'folders', op: 'insert', row });

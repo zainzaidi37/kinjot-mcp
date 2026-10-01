@@ -88,6 +88,14 @@ export const FolderSchema = z.object({
   created_at: timestamptz,
   updated_at: timestamptz,
   deleted_at: timestamptz.nullable(),
+  /**
+   * Synced folder pin: the instant the folder was pinned, null when it is not
+   * (20261001180000_folder_pins.sql). Client-written, like notes.pinned_at. A
+   * backend one release behind, an older cached row and an older desktop row
+   * all omit it; the default keeps the inferred Folder key required while
+   * those rows still parse.
+   */
+  pinned_at: timestamptz.nullable().default(null),
 });
 export type Folder = z.infer<typeof FolderSchema>;
 
