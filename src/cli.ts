@@ -200,14 +200,19 @@ async function readStdin(): Promise<string> {
 }
 
 /**
- * Note titles/bodies and backend-provided handles are untrusted. Strip control
- * characters so a note can't smuggle ANSI escapes into the user's terminal
- * (cursor games, fake output, OSC sequences).
+ * Sanitize one-line fields (titles, tags, ids, handles and errors). Strip
+ * controls except tab so untrusted text can't inject output lines or terminal
+ * commands (cursor games, fake output, OSC sequences).
  */
 export function terminalSafe(text: string): string {
   // C0 controls except \t, plus DEL and C1 controls (covers ESC/CSI/OSC).
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u0008\u000a-\u001f\u007f-\u009f]/g, '');
+}
+
+/** Sanitize multi-line bodies/details: keep LF and tab, fold CRLF, strip other controls. */
+export function terminalSafeBody(text: string): string {
+  return text.replace(/\r\n/g, '\n').split('\n').map(terminalSafe).join('\n');
 }
 
 function printHit(hit: SearchHit): void {
@@ -931,7 +936,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
             console.log(
               `${terminalSafe(item.id)}  ${terminalSafe(item.kind.toUpperCase())}  ${terminalSafe(item.title)}`,
             );
-            if (item.detail) console.log(`  ${terminalSafe(item.detail)}`);
+            // Every detail line is indented, so a multi-line detail cannot
+            // print a line that reads as another Inbox item.
+            if (item.detail)
+              console.log(`  ${terminalSafeBody(item.detail).replace(/\n/g, '\n  ')}`);
           }
           if (result.other_open > 0)
             console.log(
@@ -1008,7 +1016,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
           `${noteHandle(note)}  ${terminalSafe(note.title) || '(untitled)'}  [${tags}]  (updated ${note.updated_at.slice(0, 10)})`,
         );
         console.log('');
-        console.log(terminalSafe(note.body));
+        console.log(terminalSafeBody(note.body));
         return;
       }
       case 'recent': {

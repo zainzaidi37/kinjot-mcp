@@ -154,9 +154,40 @@ describe('autosave CLI contract', () => {
     },
   );
 
+  it('get preserves body line breaks and strips terminal controls on stdout', async () => {
+    const fetchMock = stub({
+      note: { ...full, body: 'first\r\n\tsecond\n\x1b[31mthird\rfourth\u009b0m\x7f\x00\n' },
+    });
+    await main(['get', NOTE_ID]);
+    expect(process.exitCode).toBeUndefined();
+    expect(errors).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      action: 'get_note',
+      id: NOTE_ID,
+    });
+    expect(output).toEqual([
+      'A19  Target  [autosave]  (updated 2026-09-24)',
+      '',
+      'first\n\tsecond\n[31mthirdfourth0m\n',
+    ]);
+  });
+
+  it('get flattens newlines in its header title and tags', async () => {
+    stub({ note: { ...full, title: 'first\nsecond', tags: ['tag\ninjected', 'ordinary'] } });
+    await main(['get', NOTE_ID]);
+    expect(process.exitCode).toBeUndefined();
+    expect(errors).toEqual([]);
+    expect(output).toEqual([
+      'A19  firstsecond  [taginjected, ordinary]  (updated 2026-09-24)',
+      '',
+      'plain',
+    ]);
+  });
+
   it('prints exact stored fields as terminal-safe JSON', async () => {
     const body =
-      'start\u0000\u001f\u007f\u0085\u061c\u200e\u200f\u202e\u2066\u2069\u2028\u2029 café العربية';
+      'start\n\tCRLF\r\nlone\rCR\x1b[31m\u0000\u001f\u007f\u0085\u061c\u200e\u200f\u202e\u2066\u2069\u2028\u2029 café العربية';
     const note = { ...full, body };
     stub({ note });
     await main(['get', NOTE_ID, '--json']);

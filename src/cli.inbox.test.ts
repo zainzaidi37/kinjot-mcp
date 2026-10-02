@@ -412,14 +412,14 @@ it('question sends directly without a mute check', async () => {
   expect(output).toEqual([JSON.stringify({ id: ID, status: 'sent', repeat_count: 1 })]);
 });
 
-it('inbox listing is terminal-safe and JSON prints the server envelope', async () => {
+it('inbox listing preserves detail line breaks, strips terminal controls and keeps JSON exact', async () => {
   const response = {
     items: [
       {
         id: ID,
         kind: 'handoff',
-        title: '\u001b[31mBad',
-        detail: 'line\u001b[0m',
+        title: '\u001b[31mBad\ninjected',
+        detail: 'line\r\n\tsecond\nthird\rfourth\u001b[0m\u009b31m\x7f\x00',
         context: {},
         repeat_count: 1,
         created_at: '2026-09-25',
@@ -436,7 +436,13 @@ it('inbox listing is terminal-safe and JSON prints the server envelope', async (
     kinds: ['question', 'blocker', 'handoff', 'done'],
     limit: 10,
   });
-  expect(output).toEqual([`${ID}  HANDOFF  [31mBad`, '  line[0m', '2 other open Inbox items.']);
+  expect(process.exitCode).toBeUndefined();
+  expect(errors).toEqual([]);
+  expect(output).toEqual([
+    `${ID}  HANDOFF  [31mBadinjected`,
+    '  line\n  \tsecond\n  thirdfourth[0m31m',
+    '2 other open Inbox items.',
+  ]);
   output.length = 0;
   await main(['inbox', '--json']);
   expect(requests[1]!.body).toEqual({

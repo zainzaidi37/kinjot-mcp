@@ -502,6 +502,27 @@ describe('terminalSafe', () => {
   });
 });
 
+describe('terminalSafeBody', () => {
+  it.each([
+    ['multi-line body and tabs', 'first\n\tsecond\n\nlast\n', 'first\n\tsecond\n\nlast\n'],
+    ['CRLF', 'first\r\nsecond\r\n', 'first\nsecond\n'],
+    ['lone CR inside a line', 'first\rsecond', 'firstsecond'],
+    ['7-bit CSI', '\x1b[31mred\x1b[0m', '[31mred[0m'],
+    ['OSC with BEL', '\x1b]0;title\x07text', ']0;titletext'],
+    ['OSC with ST', '\x1b]8;;url\x1b\\text', ']8;;url\\text'],
+    ['8-bit CSI', '\u009b31mtext', '31mtext'],
+    ['8-bit OSC', '\u009d0;title\u009ctext', '0;titletext'],
+    ['DEL', 'first\x7fsecond', 'firstsecond'],
+    ['NUL', 'first\x00second', 'firstsecond'],
+    ['other C0 controls', '\x01\x08\x0b\x0c\x0e\x1ftext', 'text'],
+    ['other C1 controls', '\u0080\u0085\u009ftext', 'text'],
+    ['ordinary Unicode', 'café — العربية', 'café — العربية'],
+  ])('sanitizes %s exactly', async (_name, input, expected) => {
+    const { terminalSafeBody } = await import('./cli.js');
+    expect(terminalSafeBody(input)).toBe(expected);
+  });
+});
+
 describe('cli search', () => {
   it('search command posts the search action with the joined query', async () => {
     const { main } = await import('./cli.js');
