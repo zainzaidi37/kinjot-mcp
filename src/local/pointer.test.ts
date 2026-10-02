@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { pointerPath, readPointer, POINTER_VERSION } from './pointer.js';
 
@@ -16,25 +16,15 @@ import { pointerPath, readPointer, POINTER_VERSION } from './pointer.js';
  * `serde_json::to_string_pretty` produces, field order included, so "the CLI
  * parses the fixture" is a statement about what the app actually writes.
  *
- * This is the **one layout-dependent test in a mirrored source tree**: the fixture
- * is found by walking up from the working directory, as
- * `apps/web/src/data/local-store.fixtures.test.ts` does. That is acceptable here
- * and only here — the published mirror of this package runs no tests, and
- * `tsconfig.build.json` excludes them from the build, so a checkout without
- * `packages/core/` never reaches this code.
+ * The public mirror runs these tests too. `emit:mcp-core` copies the shared
+ * bytes into src/core/fixtures; the monorepo's generator drift test and CI
+ * keep that copy equal to the original. Reading relative to this file works
+ * in either checkout. Neither build emits this unimported JSON into dist.
  */
-
-/** Walks up to the shared fixture, so the suite runs from the root or from here. */
-const FIXTURE = ((): string => {
-  const relative = join('packages', 'core', 'fixtures', 'local-pointer', 'v1.json');
-  for (let dir = process.cwd(); ; dir = dirname(dir)) {
-    const candidate = join(dir, relative);
-    if (existsSync(candidate)) return candidate;
-    if (dirname(dir) === dir) throw new Error(`could not find ${relative} above ${process.cwd()}`);
-  }
-})();
-
-const GOLDEN = readFileSync(FIXTURE, 'utf8');
+const GOLDEN = readFileSync(
+  new URL('../core/fixtures/local-pointer/v1.json', import.meta.url),
+  'utf8',
+);
 
 /** A config root holding `contents` as its pointer file. */
 function rootWith(contents: string): string {

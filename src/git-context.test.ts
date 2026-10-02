@@ -1,9 +1,10 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { gitContext, remoteRepo } from './git-context.js';
 
-const root = resolve('../../tmp');
+const root = mkdtempSync(join(tmpdir(), 'kinjot-git-context-'));
 let dir: string;
 
 beforeEach(() => {

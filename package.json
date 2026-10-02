@@ -30,12 +30,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/main.js",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "node scripts/publish-guard-cli.mjs && pnpm build"
   },
   "devDependencies": {
     "@types/node": "^26.6.1",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "~6.0.3",
+    "vite": "8.3.0",
     "vitest": "^4.1.11"
   },
   "dependencies": {

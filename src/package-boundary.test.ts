@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -11,10 +11,15 @@ import { describe, expect, it } from 'vitest';
 // have failed.
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Static and dynamic imports, re-exports, vi.mock targets, and
-// `new URL(…, import.meta.url)` file reads, each with a relative specifier.
-const RELATIVE_REFERENCE =
-  /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\bvi\.mock\(\s*|\bnew URL\(\s*)['"](\.{1,2}\/[^'"]*)['"]/g;
+// Literal paths (including import/URL specifiers), plus join/resolve calls
+// whose arguments are all literal segments. This deliberately stays a static
+// scan: computed values, aliases and dynamic template expressions need review.
+const STRING_LITERAL = /(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g;
+const LITERAL_JOIN = /\b(?:join|resolve)\(\s*((?:['"][^'"]*['"]\s*,?\s*)+)\)/g;
+// Every match contains a path separator, so a bare word such as "supabase" or
+// "scripts" (a provider name, a CLI argument) is not a path.
+const WORKSPACE_PATH =
+  /(?:^|\/)(?:(?:packages\/(?!mcp(?:\/|$))|apps\/)[^/]+|(?:scripts|supabase|workers)\/)/;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -25,17 +30,33 @@ function sourceFiles(dir: string): string[] {
 }
 
 export function escapingReferences(files: { path: string; source: string }[]): string[] {
-  const escapes: string[] = [];
+  const escapes = new Set<string>();
   for (const { path, source } of files) {
-    for (const match of source.matchAll(RELATIVE_REFERENCE)) {
-      const specifier = match[1] ?? '';
-      const target = resolve(dirname(path), specifier);
-      if (relative(packageRoot, target).startsWith('..')) {
-        escapes.push(`${relative(packageRoot, path)}: ${specifier}`);
+    // Preserve quoted strings while removing comments, whose documentation
+    // often cites private source paths without reading them.
+    const code = source.replace(
+      /(['"`])(?:\\.|(?!\1)[^\\])*?\1|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
+      (match) => (match.startsWith('/') ? ' ' : match),
+    );
+    const literals = [...code.matchAll(STRING_LITERAL)].map((match) => match[2] ?? '');
+    const joins = [...code.matchAll(LITERAL_JOIN)].map((match) =>
+      [...(match[1] ?? '').matchAll(STRING_LITERAL)].map((part) => part[2] ?? '').join('/'),
+    );
+    for (const specifier of [...literals, ...joins]) {
+      const normalized = specifier.replace(/\\\\/g, '/');
+      const target = resolve(dirname(path), normalized);
+      const rel = relative(packageRoot, target);
+      const escapesRelative =
+        /^(?:\.\.?\/)/.test(normalized) &&
+        (rel === '..' ||
+          rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) ||
+          isAbsolute(rel));
+      if (WORKSPACE_PATH.test(normalized) || escapesRelative) {
+        escapes.add(`${relative(packageRoot, path)}: ${specifier}`);
       }
     }
   }
-  return escapes;
+  return [...escapes];
 }
 
 describe('package boundary', () => {
@@ -58,6 +79,12 @@ describe('package boundary', () => {
     [`vi.mock('../../core/src/index.js', () => ({}));`],
     [`readFileSync(new URL('../../../docs/x.md', import.meta.url));`],
     [`import '../../core/src/side-effect.js';`],
+    [`readFileSync('packages/core/fixtures/local-pointer/v1.json');`],
+    [`readFileSync('../../../docs/x.md');`],
+    [`readFileSync(join('..', '..', 'packages', 'core', 'x.json'));`],
+    [`const fixture = join('packages', 'core', 'fixtures', 'x.json');`],
+    [`readFileSync(resolve('..', '..', '..', 'apps', 'web', 'x.json'));`],
+    [`readFileSync('packages/core/x.json');`],
   ])('flags %s', (source) => {
     expect(escapingReferences([{ path: join(packageRoot, 'src', 'x.ts'), source }])).toHaveLength(
       1,
@@ -68,6 +95,8 @@ describe('package boundary', () => {
     [`import { x } from './core/index.js';`],
     [`import { y } from '../local/pointer.js';`],
     [`readFileSync(new URL('../README.md', import.meta.url));`],
+    [`const provider = 'supabase';`],
+    [`run(['scripts', "workers", 'apps', 'packages']);`],
   ])('allows %s', (source) => {
     const path = join(packageRoot, 'src', 'local', 'x.ts');
     expect(escapingReferences([{ path, source }])).toEqual([]);
