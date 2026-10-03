@@ -50,6 +50,7 @@ export const VERSION: string = (
 export const HELP = `Kinjot — jot and find notes from the terminal
 
 For terminal use anywhere: npm i -g kinjot, then kinjot key
+Installed, every command also answers to the short name kj (kj search <query>).
 
 Usage:
   kinjot add <title> [--body <text>] [--tags a,b] [--folder <name>] [--id <uuid>]

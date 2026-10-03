@@ -1,6 +1,6 @@
 {
   "name": "kinjot",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "mcpName": "io.github.zainzaidi37/kinjot",
   "packageManager": "pnpm@9.15.9",
   "description": "Jot notes from Claude Code / Codex to Kinjot — MCP server and CLI",
@@ -15,7 +15,8 @@
   },
   "type": "module",
   "bin": {
-    "kinjot": "dist/main.js"
+    "kinjot": "dist/main.js",
+    "kj": "dist/main.js"
   },
   "files": [
     "dist",

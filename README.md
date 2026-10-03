@@ -73,7 +73,10 @@ use it to open, edit or add to that note, for example "add this to A10".
 
 ## CLI
 
-Once your key is saved, the same features work from a terminal:
+Once your key is saved, the same features work from a terminal. Installed
+(`npm i -g kinjot`, or in a project), every command also answers to the short
+name `kj`, so `kj search "worker environment"` works too. Through `npx`, type
+`kinjot`: `npx kj` would fetch an unrelated npm package named `kj`.
 
 ```bash
 kinjot add "Useful fix" --body "Restart the worker after changing its environment."
