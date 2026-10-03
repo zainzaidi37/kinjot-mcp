@@ -337,6 +337,17 @@ export const NoteEmbeddingSchema = z.object({
 });
 export type NoteEmbedding = z.infer<typeof NoteEmbeddingSchema>;
 
+// Derived keyword-search state. PostgREST serializes tsvector as text;
+// clients do not sync this table (20261003120400_note_search_index.sql).
+export const NoteSearchSchema = z.object({
+  note_id: uuid,
+  user_id: uuid,
+  search: z.string().nullable(),
+  created_at: timestamptz,
+  updated_at: timestamptz,
+});
+export type NoteSearch = z.infer<typeof NoteSearchSchema>;
+
 export const EmbeddingJobSchema = z.object({
   note_id: uuid,
   user_id: uuid,
