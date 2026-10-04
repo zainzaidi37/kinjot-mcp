@@ -337,6 +337,15 @@ export const NoteEmbeddingSchema = z.object({
 });
 export type NoteEmbedding = z.infer<typeof NoteEmbeddingSchema>;
 
+// One row returned by public.match_related_notes; embeddings stay server-side.
+export const RelatedNoteSchema = z.object({
+  note_id: uuid,
+  similarity: z.number(),
+  gist: z.string().nullable(),
+  source_maybe_stale: z.boolean(),
+});
+export type RelatedNote = z.infer<typeof RelatedNoteSchema>;
+
 // Derived keyword-search state. PostgREST serializes tsvector as text;
 // clients do not sync this table (20261003120400_note_search_index.sql).
 export const NoteSearchSchema = z.object({
