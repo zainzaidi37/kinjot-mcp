@@ -153,6 +153,10 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
           `SELECT "id", "name", "created_at", "deleted_at" FROM "folders" WHERE "user_id" = ?`,
         )
         .all(workspaceId) as unknown as ExistingFolder[];
+      const excludedFolderIds =
+        library.schemaVersion >= 4
+          ? readExcludedFolderIds(db, workspaceId, library.schemaVersion)
+          : undefined;
       const existingTags = db
         .prepare(`SELECT "id", "name", "deleted_at" FROM "tags" WHERE "user_id" = ?`)
         .all(workspaceId) as unknown as ExistingTag[];
@@ -161,6 +165,7 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
         {
           userId: workspaceId,
           folders,
+          excludedFolderIds,
           tags: existingTags,
           now: new Date().toISOString(),
           newId: () => randomUUID(),
@@ -183,7 +188,7 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
   // has already rolled back (or never began), so the truthful line is the
   // same contention refusal the open path gives — not a bare "database is
   // locked" that leaves the user unsure whether the jot half-landed.
-  let plan: ReturnType<typeof planSaveNote>;
+  let plan: ReturnType<typeof planAndApply>;
   try {
     plan = planAndApply();
   } catch (error) {
@@ -192,6 +197,7 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
   }
 
   return {
+    ...(library.schemaVersion >= 4 ? { aiExcluded: plan.aiExcluded } : {}),
     id: plan.note.id,
     title: plan.note.title,
     created_at: plan.note.created_at,
@@ -213,6 +219,35 @@ function readTagVocabulary(
   const tags = db
     .prepare(`SELECT "id", "name", "deleted_at" FROM "tags" WHERE "user_id" = ?`)
     .all(workspaceId) as unknown as ExistingTag[];
+  const excluded = readExcludedFolderIds(db, workspaceId, schemaVersion);
+  const links = db
+    .prepare(
+      `SELECT nt."tag_id", nt."deleted_at", n."deleted_at" AS "note_deleted_at", n."folder_id"${schemaVersion >= 4 ? ', n."trashed_from_folder_id"' : ''} FROM "note_tags" nt JOIN "notes" n ON n."id" = nt."note_id" AND n."user_id" = nt."user_id" WHERE nt."user_id" = ?`,
+    )
+    .all(workspaceId) as unknown as {
+    tag_id: string;
+    deleted_at: string | null;
+    note_deleted_at: string | null;
+    folder_id: string | null;
+    trashed_from_folder_id?: string | null;
+  }[];
+  const noteTags: TagVocabularyLink[] = links.map((link) => ({
+    tag_id: link.tag_id,
+    deleted_at: link.deleted_at,
+    ai_eligible:
+      link.note_deleted_at === null &&
+      link.trashed_from_folder_id == null &&
+      (link.folder_id === null || !excluded.has(link.folder_id)),
+  }));
+  return selectTagVocabulary({ tags, noteTags });
+}
+
+/** The same live-or-dead No-AI roots and descendant set used by vocabulary. */
+function readExcludedFolderIds(
+  db: SqliteDatabase,
+  workspaceId: string,
+  schemaVersion: number,
+): Set<string> {
   const folders = db
     .prepare(
       `SELECT "id", "parent_id", "name", "deleted_at"${schemaVersion >= 4 ? ', "ai_excluded_at"' : ''} FROM "folders" WHERE "user_id" = ?`,
@@ -242,24 +277,5 @@ function readTagVocabulary(
       if (f.parent_id !== null && excluded.has(f.parent_id)) excluded.add(f.id);
     if (before === excluded.size) break;
   }
-  const links = db
-    .prepare(
-      `SELECT nt."tag_id", nt."deleted_at", n."deleted_at" AS "note_deleted_at", n."folder_id"${schemaVersion >= 4 ? ', n."trashed_from_folder_id"' : ''} FROM "note_tags" nt JOIN "notes" n ON n."id" = nt."note_id" AND n."user_id" = nt."user_id" WHERE nt."user_id" = ?`,
-    )
-    .all(workspaceId) as unknown as {
-    tag_id: string;
-    deleted_at: string | null;
-    note_deleted_at: string | null;
-    folder_id: string | null;
-    trashed_from_folder_id?: string | null;
-  }[];
-  const noteTags: TagVocabularyLink[] = links.map((link) => ({
-    tag_id: link.tag_id,
-    deleted_at: link.deleted_at,
-    ai_eligible:
-      link.note_deleted_at === null &&
-      link.trashed_from_folder_id == null &&
-      (link.folder_id === null || !excluded.has(link.folder_id)),
-  }));
-  return selectTagVocabulary({ tags, noteTags });
+  return excluded;
 }

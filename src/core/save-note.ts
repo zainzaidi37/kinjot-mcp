@@ -189,6 +189,8 @@ export interface SaveNoteContext {
    * part of what is being ported.
    */
   readonly folders: readonly ExistingFolder[];
+  /** Prefer live matches outside this set; absent preserves timestamp-only lookup. */
+  readonly excludedFolderIds?: ReadonlySet<string>;
   /** The user's `tags` rows, soft-deleted ones included for the same reason. */
   readonly tags: readonly ExistingTag[];
   /** ISO-8601 timestamp for every row this call creates. */
@@ -287,6 +289,8 @@ export interface SaveNotePlan {
   readonly note: { readonly id: string; readonly title: string; readonly created_at: string };
   /** The resolved folder, existing or newly planned; null when none. */
   readonly folderId: string | null;
+  /** True only when the chosen existing folder belongs to the exclusion set. */
+  readonly aiExcluded: boolean;
   /** Resolved tag ids, deduplicated, in first-appearance order. */
   readonly tagIds: readonly string[];
 }
@@ -324,12 +328,14 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
 
   // --- Folder: get-or-create, case-insensitively, live rows only. ----------
   let folderId: string | null = null;
+  let aiExcluded = false;
   if (folder !== null) {
     const wanted = pgTrimSpaces(folder);
     if (wanted.length > 0) {
-      const existing = oldestLiveFolderMatching(context.folders, wanted);
+      const existing = oldestLiveFolderMatching(context.folders, wanted, context.excludedFolderIds);
       if (existing) {
         folderId = existing.id;
+        aiExcluded = context.excludedFolderIds?.has(existing.id) === true;
       } else {
         const row: PlannedFolderRow = {
           id: context.newId(),
@@ -407,31 +413,37 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
     ops,
     note: { id: noteRow.id, title: noteRow.title, created_at: noteRow.created_at },
     folderId,
+    aiExcluded,
     tagIds,
   };
 }
 
 /**
- * `select id from folders where user_id = ? and lower(name) = lower(trim(?))
- * and deleted_at is null order by created_at limit 1`.
+ * Live case-insensitive matches, ordered by exclusion membership then created_at.
+ * Stored names are not trimmed (quirk 3), and no parent_id predicate applies:
+ * nested folders may still be write targets, even when excluded from reads.
+ * Without an exclusion set, the lookup orders by created_at alone as before.
  *
- * Note what is *not* here: no `trim` on the stored side (quirk 3), and no
- * `parent_id` predicate — a folder nested anywhere, including under Trash,
- * is eligible.
- *
- * The SQL's ordering is `created_at` alone, so two folders sharing an instant
- * make its choice arbitrary. Rather than inherit that, ties break on `id`;
- * the conformance fixtures never construct one, and its harness asserts as
- * much using {@link compareTimestamps} — the same granularity compared here,
- * so a fixture that started tying would fail loudly instead of coin-flipping.
+ * SQL ties on created_at are arbitrary. Here ties break on id; the conformance
+ * fixtures avoid tied instants and assert that using compareTimestamps.
  */
 function oldestLiveFolderMatching(
   folders: readonly ExistingFolder[],
   wanted: string,
+  excludedFolderIds?: ReadonlySet<string>,
 ): ExistingFolder | null {
   const target = wanted.toLowerCase();
+  const eligible = excludedFolderIds
+    ? folders.filter(
+        (folder) =>
+          folder.deleted_at === null &&
+          folder.name.toLowerCase() === target &&
+          !excludedFolderIds.has(folder.id),
+      )
+    : [];
+  const candidates = eligible.length > 0 ? eligible : folders;
   let best: ExistingFolder | null = null;
-  for (const folder of folders) {
+  for (const folder of candidates) {
     if (folder.deleted_at !== null) continue;
     if (folder.name.toLowerCase() !== target) continue;
     if (best === null || isOlder(folder, best)) best = folder;

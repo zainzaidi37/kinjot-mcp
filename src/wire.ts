@@ -80,6 +80,7 @@ export const wireSchemas = {
   inbox_resolve: z.object({ id: z.string(), status: z.literal('resolved') }),
   key_info: z.object({ access: z.enum(API_KEY_ACCESS_LEVELS) }),
   save_note: z.object({
+    ai_excluded: z.unknown(),
     note: z.object({ id: z.string(), title: z.string(), created_at: z.string() }),
     // This vocabulary hint has always been best-effort, including malformed
     // hints from old deployments. It must never prevent a successful save.
@@ -99,6 +100,7 @@ export const wireSchemas = {
     ),
   }),
   edit_note: z.object({
+    ai_excluded: z.unknown(),
     note: z.object({
       id: z.string(),
       short_id: z.number().int().nullable().optional(),

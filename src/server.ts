@@ -218,7 +218,7 @@ export function buildServer(
               : '';
           const dropped = kept.length < requested.length ? ` ${RESERVED_NOTICE}` : '';
           return textResult(
-            `Jotted "${note.title}" (id ${note.id}, tags: ${note.tags.join(', ') || 'none'}).${dropped}${hint}`,
+            `Jotted "${note.title}" (id ${note.id}, tags: ${note.tags.join(', ') || 'none'})${note.aiExcluded ? " into a No AI folder: agents can't read it back." : '.'}${dropped}${hint}`,
           );
         } catch (error) {
           return errorResult(error);
@@ -485,7 +485,7 @@ export function buildServer(
             vocabulary: tagVocabulary,
           });
           return textResult(
-            `Edited ${noteHandle(note)} "${note.title}".${dropped ? ` ${RESERVED_NOTICE}` : ''}`,
+            `Edited ${noteHandle(note)} "${note.title}"${note.aiExcluded ? " and moved it into a No AI folder: agents can't read it back." : '.'}${dropped ? ` ${RESERVED_NOTICE}` : ''}`,
           );
         } catch (error) {
           return errorResult(error);

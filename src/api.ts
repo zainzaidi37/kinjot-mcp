@@ -66,6 +66,7 @@ export interface SaveNoteInput {
 }
 
 export interface SavedNote {
+  aiExcluded?: boolean;
   id: string;
   title: string;
   created_at: string;
@@ -93,6 +94,7 @@ export interface AppendNoteInput {
 }
 
 export interface EditedNote {
+  aiExcluded?: boolean;
   id: string;
   short_id?: number | null;
   title: string;
@@ -271,7 +273,7 @@ export class NotesApi {
       : error;
   }
 
-  async saveNote(input: SaveNoteInput): Promise<SavedNote> {
+  async saveNote(input: SaveNoteInput): Promise<SavedNote & { aiExcluded: boolean }> {
     if (input.id !== undefined && !isUuidShapeAnyCase(input.id)) {
       throw new Error('note id must be a UUID in 8-4-4-4-12 hexadecimal form');
     }
@@ -286,7 +288,12 @@ export class NotesApi {
       folder: input.folder,
       source: input.source ?? 'mcp',
     });
-    return { ...response.note, tags, existingTags: response.existing_tags };
+    return {
+      ...response.note,
+      tags,
+      existingTags: response.existing_tags,
+      aiExcluded: response.ai_excluded === true,
+    };
   }
 
   async listRecentNotes(limit = 10): Promise<SearchHit[]> {
@@ -323,7 +330,7 @@ export class NotesApi {
     }
   }
 
-  async editNote(input: EditNoteInput): Promise<EditedNote> {
+  async editNote(input: EditNoteInput): Promise<EditedNote & { aiExcluded: boolean }> {
     const shortId = parseNoteLabel(input.id.trim());
     const reference = shortId === null ? { id: input.id } : { short_id: shortId };
     try {
@@ -337,7 +344,7 @@ export class NotesApi {
         folder: input.folder,
         source: input.source ?? 'mcp',
       });
-      return result.note;
+      return { ...result.note, aiExcluded: result.ai_excluded === true };
     } catch (error) {
       throw this.agentEditError(error);
     }

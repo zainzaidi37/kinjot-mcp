@@ -291,10 +291,11 @@ describe('NotesApi', () => {
       created_at: 'now',
       tags: ['infra'],
       existingTags: undefined,
+      aiExcluded: false,
     });
   });
 
-  it('published response parsing accepts ai_excluded without changing the existing client payload', async () => {
+  it('published response parsing returns aiExcluded for ai_excluded true', async () => {
     const api = new NotesApi(config, (async () =>
       jsonResponse(200, {
         note: { id: 'x', title: 't', created_at: 'now' },
@@ -307,6 +308,7 @@ describe('NotesApi', () => {
       created_at: 'now',
       tags: [],
       existingTags: [],
+      aiExcluded: true,
     });
   });
 
@@ -323,6 +325,7 @@ describe('NotesApi', () => {
       created_at: 'now',
       tags: ['infra'],
       existingTags: undefined,
+      aiExcluded: false,
     });
   });
 

@@ -762,7 +762,9 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
           folder: flags.get('folder'),
           source: 'cli',
         });
-        console.log(`Jotted "${terminalSafe(note.title)}" (id ${terminalSafe(note.id)}).`);
+        console.log(
+          `Jotted "${terminalSafe(note.title)}" (id ${terminalSafe(note.id)})${note.aiExcluded ? " into a No AI folder: agents can't read it back." : '.'}`,
+        );
         return;
       }
       case 'notify': {
