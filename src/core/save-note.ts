@@ -219,6 +219,7 @@ export interface PlannedNoteRow {
   readonly pinned_in: null;
   readonly sync_seq: null;
   readonly short_id: null;
+  readonly trashed_from_folder_id: null;
   readonly created_at: string;
   readonly updated_at: string;
   readonly deleted_at: null;
@@ -229,6 +230,7 @@ export interface PlannedFolderRow {
   readonly user_id: string;
   readonly name: string;
   readonly parent_id: null;
+  readonly ai_excluded_at: null;
   readonly sync_seq: null;
   readonly created_at: string;
   readonly updated_at: string;
@@ -336,6 +338,7 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
           parent_id: null,
           ...stamps,
           pinned_at: null,
+          ai_excluded_at: null,
         };
         folderId = row.id;
         ops.push({ table: 'folders', op: 'insert', row });
@@ -354,6 +357,7 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
     pinned_at: null,
     pinned_in: null,
     short_id: null,
+    trashed_from_folder_id: null,
     ...stamps,
   };
   ops.push({ table: 'notes', op: 'insert', row: noteRow });
@@ -515,6 +519,7 @@ function instant(value: string): [number, number] {
  */
 export interface TagVocabularyLink {
   readonly tag_id: string;
+  readonly ai_eligible: boolean;
   readonly deleted_at: string | null;
 }
 
@@ -540,8 +545,8 @@ export interface TagVocabularyLink {
  * `folders` and `tags`. Passing an unfiltered table is a cross-tenant read,
  * not a wrong sort order.
  *
- * Faithful details: link counts include every live link, deliberately
- * unscoped by tidy eligibility; names longer than
+ * A tag with live links stays only when at least one links an AI-eligible note.
+ * Link counts still include every live link; names longer than
  * {@link TAG_VOCABULARY_MAX_NAME_LENGTH} **code points** are excluded; a tag
  * with no live links counts 0 rather than dropping out (the SQL's LEFT JOIN).
  *
@@ -556,14 +561,19 @@ export function selectTagVocabulary(input: {
   readonly noteTags: readonly TagVocabularyLink[];
 }): string[] {
   const counts = new Map<string, number>();
+  const eligible = new Set<string>();
   for (const link of input.noteTags) {
     if (link.deleted_at !== null) continue;
+    if (link.ai_eligible) eligible.add(link.tag_id);
     counts.set(link.tag_id, (counts.get(link.tag_id) ?? 0) + 1);
   }
 
   return input.tags
     .filter(
-      (tag) => tag.deleted_at === null && [...tag.name].length <= TAG_VOCABULARY_MAX_NAME_LENGTH,
+      (tag) =>
+        tag.deleted_at === null &&
+        [...tag.name].length <= TAG_VOCABULARY_MAX_NAME_LENGTH &&
+        (!counts.has(tag.id) || eligible.has(tag.id)),
     )
     .map((tag) => ({ tag, count: counts.get(tag.id) ?? 0 }))
     .sort(

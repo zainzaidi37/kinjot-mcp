@@ -56,6 +56,7 @@ export const NoteSchema = z.object({
   title: z.string(),
   body: z.string(),
   folder_id: uuid.nullable(),
+  trashed_from_folder_id: uuid.nullable().default(null),
   source: z.enum(NOTE_SOURCES),
   /**
    * A note holds at most one pin, scoped to exactly one view: All Notes
@@ -84,6 +85,7 @@ export const FolderSchema = z.object({
   user_id: uuid,
   name: z.string().min(1),
   parent_id: uuid.nullable(),
+  ai_excluded_at: timestamptz.nullable().default(null),
   sync_seq: syncSeq.nullable(),
   created_at: timestamptz,
   updated_at: timestamptz,

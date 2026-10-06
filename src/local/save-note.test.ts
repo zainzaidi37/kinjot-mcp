@@ -114,6 +114,28 @@ describe('saveNoteLocally', () => {
     expect(saved.existingTags).toEqual(expect.arrayContaining(['infra', 'connection-pool']));
   });
 
+  it('returns exactly the eligible local tag vocabulary', () => {
+    const trashed = saveNoteLocally(library, {
+      title: 'trashed',
+      body: '',
+      folder: 'Work',
+      tags: ['trashonly', 'mixed'],
+    });
+    const deleted = saveNoteLocally(library, { title: 'deleted', body: '', tags: ['deletedonly'] });
+    saveNoteLocally(library, { title: 'eligible', body: '', tags: ['mixed'] });
+    const unused = saveNoteLocally(library, { title: 'unused link', body: '', tags: ['unused'] });
+    // Turn a normal root into Trash and retain live links on excluded notes.
+    library.db
+      .prepare('UPDATE folders SET name = ? WHERE id = (SELECT folder_id FROM notes WHERE id = ?)')
+      .run('Trash', trashed.id);
+    library.db
+      .prepare('UPDATE notes SET deleted_at = ? WHERE id = ?')
+      .run('2026-10-06T00:00:00Z', deleted.id);
+    library.db.prepare('DELETE FROM note_tags WHERE note_id = ?').run(unused.id);
+    const saved = saveNoteLocally(library, { title: 'vocabulary', body: '' });
+    expect(saved.existingTags).toEqual(['mixed', 'unused']);
+  });
+
   it('uses a supplied note id while minting distinct folder and tag ids', () => {
     const id = '12345678-1234-1234-8234-123456789abc';
     const saved = saveNoteLocally(library, {

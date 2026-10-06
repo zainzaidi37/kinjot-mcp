@@ -294,6 +294,22 @@ describe('NotesApi', () => {
     });
   });
 
+  it('published response parsing accepts ai_excluded without changing the existing client payload', async () => {
+    const api = new NotesApi(config, (async () =>
+      jsonResponse(200, {
+        note: { id: 'x', title: 't', created_at: 'now' },
+        existing_tags: [],
+        ai_excluded: true,
+      })) as typeof fetch);
+    await expect(api.saveNote({ title: 't', body: 'b', tags: [] })).resolves.toEqual({
+      id: 'x',
+      title: 't',
+      created_at: 'now',
+      tags: [],
+      existingTags: [],
+    });
+  });
+
   it('saveNote ignores a malformed existing_tags value instead of poisoning the session cache', async () => {
     const api = new NotesApi(config, (async () =>
       jsonResponse(200, {

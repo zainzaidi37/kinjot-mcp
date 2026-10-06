@@ -196,7 +196,7 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
     title: plan.note.title,
     created_at: plan.note.created_at,
     tags,
-    existingTags: readTagVocabulary(db, workspaceId),
+    existingTags: readTagVocabulary(db, workspaceId, library.schemaVersion),
   };
 }
 
@@ -205,12 +205,61 @@ export function saveNoteLocally(library: LocalLibrary, input: LocalSaveNoteInput
  * it in its return expression, so a tag this call created is in it, with its
  * new link counted.
  */
-function readTagVocabulary(db: SqliteDatabase, workspaceId: string): string[] {
+function readTagVocabulary(
+  db: SqliteDatabase,
+  workspaceId: string,
+  schemaVersion: number,
+): string[] {
   const tags = db
     .prepare(`SELECT "id", "name", "deleted_at" FROM "tags" WHERE "user_id" = ?`)
     .all(workspaceId) as unknown as ExistingTag[];
-  const noteTags = db
-    .prepare(`SELECT "tag_id", "deleted_at" FROM "note_tags" WHERE "user_id" = ?`)
-    .all(workspaceId) as unknown as TagVocabularyLink[];
+  const folders = db
+    .prepare(
+      `SELECT "id", "parent_id", "name", "deleted_at"${schemaVersion >= 4 ? ', "ai_excluded_at"' : ''} FROM "folders" WHERE "user_id" = ?`,
+    )
+    .all(workspaceId) as unknown as {
+    id: string;
+    parent_id: string | null;
+    name: string;
+    deleted_at: string | null;
+    ai_excluded_at?: string | null;
+  }[];
+  const excluded = new Set(
+    folders
+      .filter(
+        (f) =>
+          f.ai_excluded_at != null ||
+          (f.parent_id === null &&
+            f.deleted_at === null &&
+            f.name.trim().toLowerCase() === 'trash'),
+      )
+      .map((f) => f.id),
+  );
+  // At most one pass per folder: cycles terminate, and dead children still inherit.
+  for (let pass = 0; pass < folders.length; pass++) {
+    const before = excluded.size;
+    for (const f of folders)
+      if (f.parent_id !== null && excluded.has(f.parent_id)) excluded.add(f.id);
+    if (before === excluded.size) break;
+  }
+  const links = db
+    .prepare(
+      `SELECT nt."tag_id", nt."deleted_at", n."deleted_at" AS "note_deleted_at", n."folder_id"${schemaVersion >= 4 ? ', n."trashed_from_folder_id"' : ''} FROM "note_tags" nt JOIN "notes" n ON n."id" = nt."note_id" AND n."user_id" = nt."user_id" WHERE nt."user_id" = ?`,
+    )
+    .all(workspaceId) as unknown as {
+    tag_id: string;
+    deleted_at: string | null;
+    note_deleted_at: string | null;
+    folder_id: string | null;
+    trashed_from_folder_id?: string | null;
+  }[];
+  const noteTags: TagVocabularyLink[] = links.map((link) => ({
+    tag_id: link.tag_id,
+    deleted_at: link.deleted_at,
+    ai_eligible:
+      link.note_deleted_at === null &&
+      link.trashed_from_folder_id == null &&
+      (link.folder_id === null || !excluded.has(link.folder_id)),
+  }));
   return selectTagVocabulary({ tags, noteTags });
 }

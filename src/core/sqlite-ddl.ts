@@ -95,13 +95,15 @@ export type LocalTableName = (typeof LOCAL_TABLE_NAMES)[number];
  * An entry newer than the last of `SQLITE_MIGRATIONS` is the shared half of a
  * schema still to ship: the record carries it, so the browser cache's column
  * check admits it, while every shipped migration renders without it. Version 4
- * (`folders.pinned_at`, synced folder pins) is that today; its migration, the
+ * (folder pins and AI exclusion columns) is that today; its migration, the
  * Rust column map and the fixture follow in the desktop half while desktop
  * builds are paused, as version 3's did.
  */
 export const ADDED_COLUMNS = [
   { version: 3, table: 'notes', column: 'short_id' },
   { version: 4, table: 'folders', column: 'pinned_at' },
+  { version: 4, table: 'folders', column: 'ai_excluded_at' },
+  { version: 4, table: 'notes', column: 'trashed_from_folder_id' },
 ] as const;
 
 /** How one column is stored, and what a (de)hydrating implementation owes it. */
@@ -211,6 +213,7 @@ export const LOCAL_STORE_SQLITE_SCHEMA: Readonly<Record<LocalTableName, SqliteTa
       updated_at: TEXT,
       deleted_at: TEXT_NULL,
       short_id: INT_NULL,
+      trashed_from_folder_id: TEXT_NULL,
     },
     primaryKey: ['id'],
     autoKey: null,
@@ -231,6 +234,7 @@ export const LOCAL_STORE_SQLITE_SCHEMA: Readonly<Record<LocalTableName, SqliteTa
       updated_at: TEXT,
       deleted_at: TEXT_NULL,
       pinned_at: TEXT_NULL,
+      ai_excluded_at: TEXT_NULL,
     },
     primaryKey: ['id'],
     autoKey: null,
