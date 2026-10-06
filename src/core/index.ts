@@ -162,12 +162,16 @@ export const ExportManifestV2Schema = z
     formatVersion: z.literal(2),
     exportedAt: ExportManifestV1Schema.shape.exportedAt,
     fileFormat: ExportManifestV1Schema.shape.fileFormat,
-    folders: ExportManifestV1Schema.shape.folders,
+    folders: ExportManifestV1Schema.shape.folders.element
+      .extend({ aiExcluded: z.boolean().optional() })
+      .strict()
+      .array(),
     tags: ExportManifestV1Schema.shape.tags,
     notes: ExportManifestV1Schema.shape.notes.element
       .extend({
         pinnedAt: NoteSchema.shape.pinned_at,
         pinnedIn: NoteSchema.shape.pinned_in,
+        trashedFrom: FolderSchema.shape.id.nullable().optional(),
       })
       .strict()
       .array(),
@@ -1535,3 +1539,5 @@ export * from './save-note.js';
 export * from './admin-analytics.js';
 
 export * from './reminders.js';
+
+export { aiExcludedFolderIds, isNoteAiExcluded, noAiAncestor } from './ai-exclusion.js';
