@@ -1540,4 +1540,12 @@ export * from './admin-analytics.js';
 
 export * from './reminders.js';
 
-export { aiExcludedFolderIds, isNoteAiExcluded, noAiAncestor } from './ai-exclusion.js';
+export {
+  aiExcludedFolderIds,
+  isNoteAiExcluded,
+  noAiAncestor,
+  notesBecomingAiEligible,
+  type AiEligibilityMove,
+  noteAiMove,
+  isAiTrashFolder,
+} from './ai-exclusion.js';
