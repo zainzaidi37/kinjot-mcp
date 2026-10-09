@@ -343,6 +343,16 @@ export const NoteEmbeddingSchema = z.object({
 });
 export type NoteEmbedding = z.infer<typeof NoteEmbeddingSchema>;
 
+// Immutable, rebuildable vectors; ownership is copied by the parent-locked RPC.
+export const NoteChunkEmbeddingSchema = z.object({
+  note_id: uuid,
+  user_id: uuid,
+  chunk_hash: z.string().min(1),
+  embedding: z.array(z.number()).length(EMBEDDING_DIM),
+  created_at: timestamptz,
+});
+export type NoteChunkEmbedding = z.infer<typeof NoteChunkEmbeddingSchema>;
+
 // One row returned by public.match_related_notes; embeddings stay server-side.
 export const RelatedNoteSchema = z.object({
   note_id: uuid,
