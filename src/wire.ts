@@ -96,6 +96,7 @@ export const wireSchemas = {
         title: z.string(),
         gist: z.string().nullable(),
         similarity: z.number(),
+        passage: z.string().nullable().optional(),
       }),
     ),
   }),

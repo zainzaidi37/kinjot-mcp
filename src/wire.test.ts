@@ -15,6 +15,13 @@ function apiFor(body: unknown) {
 }
 
 describe('account wire responses', () => {
+  it('recall parses replies with a passage, null passage, and no passage from older servers', async () => {
+    const base = { id: 'id', title: 't', gist: null, similarity: 0.5 };
+    for (const hit of [base, { ...base, passage: null }, { ...base, passage: 'saved excerpt' }]) {
+      expect(await apiFor({ matches: [hit] }).recallNotes('q')).toEqual([hit]);
+    }
+  });
+
   it.each(actions)(
     '%s refuses malformed replies without echoing untrusted content',
     async (action, call) => {

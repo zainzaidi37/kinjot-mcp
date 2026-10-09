@@ -236,10 +236,11 @@ function printSearch({ notes, total }: SearchResult, query: string): void {
 }
 
 // Recall candidates lead with the same handle as other listings and keep the
-// full UUID. Title/gist are untrusted and go through terminalSafe.
+// full UUID. Titles, gists and saved passages go through terminalSafe.
 export function formatRecallHit(match: RecallMatch): string {
   const gist = match.gist ? ` — ${terminalSafe(match.gist)}` : '';
-  return `${noteHandle(match)}  [${match.similarity.toFixed(2)}]  ${terminalSafe(match.title) || '(untitled)'}  (${match.id})${gist}`;
+  const passage = match.passage ? `\n  ${terminalSafe(match.passage)}` : '';
+  return `${noteHandle(match)}  [${match.similarity.toFixed(2)}]  ${terminalSafe(match.title) || '(untitled)'}  (${match.id})${gist}${passage}`;
 }
 
 function printRecall(matches: RecallMatch[], query: string): void {

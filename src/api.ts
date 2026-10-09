@@ -46,13 +46,14 @@ export interface FullNote {
 }
 
 // Semantic retrieval candidates: compact like SearchHit, plus the one-line
-// gist written at embed time and the cosine similarity for calibration.
+// gist written at embed time, cosine similarity and an optional saved excerpt.
 export interface RecallMatch {
   id: string;
   short_id?: number | null;
   title: string;
   gist: string | null;
   similarity: number;
+  passage?: string | null;
 }
 
 export interface SaveNoteInput {
