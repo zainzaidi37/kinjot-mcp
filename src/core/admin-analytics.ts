@@ -321,6 +321,13 @@ export type AdminUsersResponse = z.infer<typeof AdminUsersResponseSchema>;
  * about what a field means.
  */
 export const AdminUserDetailSchema = AdminUserRowSchema.extend({
+  ai_pause: z
+    .object({
+      paused: z.boolean(),
+      tier: z.enum(['cooldown', 'hold']).nullable(),
+      resumes_at: isoInstant.nullable(),
+    })
+    .optional(),
   activity_by_day: z.array(z.object({ date: isoDate, notes: count, recalls: count, tidy: count })),
 });
 export type AdminUserDetail = z.infer<typeof AdminUserDetailSchema>;
@@ -367,6 +374,7 @@ export const ADMIN_ACTIONS = [
   'grant_pro',
   'revoke_pro',
   'reset_recall_quota',
+  'lift_ai_pause',
   'revoke_keys',
   'send_magic_link',
   'resend_confirmation',

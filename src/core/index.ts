@@ -1202,7 +1202,17 @@ export const RecallStreamEventSchema = z.discriminatedUnion('event', [
   }),
   z.object({
     event: z.literal('error'),
-    data: z.object({ message: z.string() }),
+    /**
+     * Deliberately an open string, not an enum over the codes this build knows.
+     * Both directions of a non-atomic deploy have to keep the engine's message:
+     * an older function omits `code` entirely, and a newer one may send a code
+     * this bundle has never heard of. An enum would reject the second and the
+     * client would replace a real error with "malformed stream data" — which is
+     * exactly the stale-bundle hazard this arc has been careful about. Meaning
+     * is assigned at the point of use, by comparing against
+     * `provider_declined`; anything else is a plain failure.
+     */
+    data: z.object({ message: z.string(), code: z.string().optional() }),
   }),
 ]);
 export type RecallStreamEvent = z.infer<typeof RecallStreamEventSchema>;
@@ -1559,3 +1569,38 @@ export {
   noteAiMove,
   isAiTrashFolder,
 } from './ai-exclusion.js';
+
+/** Content-free, service-only account safety records; never part of sync. */
+export const AiSafetyDeclineSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  feature: z.enum(['recall', 'gist', 'tidy']),
+  provider: z.enum(['anthropic', 'openai']),
+  category: z.string().max(64).nullable(),
+  created_at: z.string().datetime({ offset: true }),
+});
+export type AiSafetyDecline = z.infer<typeof AiSafetyDeclineSchema>;
+export const AiPauseLiftSchema = z.object({
+  user_id: z.string().uuid(),
+  lifted_at: z.string().datetime({ offset: true }),
+});
+export type AiPauseLift = z.infer<typeof AiPauseLiftSchema>;
+export const AiPauseStateSchema = z.object({
+  paused: z.boolean(),
+  tier: z.enum(['cooldown', 'hold']).nullable(),
+  resumes_at: z.string().datetime({ offset: true }).nullable(),
+});
+export type AiPauseState = z.infer<typeof AiPauseStateSchema>;
+export interface AiSafetyRpc {
+  record_ai_safety_decline: {
+    Args: {
+      p_user_id: string;
+      p_feature: AiSafetyDecline['feature'];
+      p_provider: AiSafetyDecline['provider'];
+      p_category: string | null;
+    };
+    Returns: undefined;
+  };
+  ai_pause_state: { Args: { p_user_id: string }; Returns: AiPauseState[] };
+  admin_lift_ai_pause: { Args: { p_user_id: string }; Returns: undefined };
+}
