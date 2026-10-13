@@ -24,10 +24,16 @@ import { z } from 'zod';
  * promise that no analytics profile is built from note content is a property
  * of this shape, not of the UI that renders it.
  *
- * `supabase/functions/admin-analytics/schema.ts` is the server's mirror of
- * this file: the Deno/npm boundary keeps Edge Functions from importing
- * `@kinjot/core` (see `_shared/tidy-clarify.ts` for the same arrangement), so
- * the two must be changed together.
+ * The source of this contract is `packages/core/src/admin-analytics.ts`. Two
+ * copies are generated from it and never edited by hand:
+ * `supabase/functions/_shared/core/admin-analytics.ts` for the Edge Functions,
+ * which run under Deno and cannot import `@kinjot/core`
+ * (`pnpm --filter @kinjot/core emit:edge-core`), and
+ * `packages/mcp/src/core/admin-analytics.ts` (`emit:mcp-core`). An admin
+ * contract change is made in the source only and re-emitted; CI fails on any
+ * difference. The Edge copy is made by rewriting `zod` to Deno's pinned `npm:`
+ * specifier, so the source must stay import-free apart from `zod`; the
+ * generator refuses any other import rather than vendor its closure.
  */
 
 /** A UTC calendar date, `YYYY-MM-DD`. Every bucket in this file is a UTC day. */
@@ -584,3 +590,37 @@ export const AdminMailTraceSchema = z.discriminatedUnion('status', [
   }),
 ]);
 export type AdminMailTrace = z.infer<typeof AdminMailTraceSchema>;
+
+/* ---------- the request union (one endpoint, every section) ---------- */
+
+/**
+ * The overview request. `section` comes first and is optional, so a client
+ * built before the union, which sends only `{ days }`, keeps working
+ * unchanged. Written out rather than derived from `AdminAnalyticsRequestSchema`
+ * with `.extend`, which would put `days` first: Zod's output follows the
+ * shape's key order.
+ */
+export const AdminOverviewRequestSchema = z.object({
+  section: z.literal('overview').optional(),
+  days: z.number().int().min(1).max(365),
+});
+export type AdminOverviewRequest = z.infer<typeof AdminOverviewRequestSchema>;
+
+/**
+ * The request, as one union rather than one endpoint per section.
+ *
+ * `overview` carries the original `{ days }` body and its `section` is
+ * optional, so a client built before this union keeps working unchanged. The
+ * other sections are tagged explicitly; an unknown tag matches nothing and
+ * falls out as a 400.
+ *
+ * Declared after its members, which `z.union` reads at construction.
+ */
+export const AdminRequestSchema = z.union([
+  AdminOverviewRequestSchema,
+  AdminUsersQuerySchema,
+  AdminUserQuerySchema,
+  AdminAuditQuerySchema,
+  AdminMailQuerySchema,
+]);
+export type AdminRequest = z.infer<typeof AdminRequestSchema>;

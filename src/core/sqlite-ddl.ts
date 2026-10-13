@@ -23,8 +23,7 @@
  *    SQLite has no per-row notion of absence, so a missing value is `null` and
  *    a `NOT NULL` column with no default makes an incomplete row fail loudly
  *    at the boundary instead of half-landing.
- * 2. **TEXT for strings, ids and opaque JSON; INTEGER for every integer** (and
- *    for any boolean, should one ever exist — see {@link SqliteColumn.boolean}).
+ * 2. **TEXT for strings, ids and opaque JSON; INTEGER for every integer**.
  *    JS numbers are `f64` at the source, so INTEGER affinity is what converts
  *    them back; nothing may rely on precision above 2^53
  *    (`plans/desktop-app.md` §4.3/§4.8).
@@ -121,14 +120,6 @@ export interface SqliteColumn {
    * (`outbox.ts` treats `payload` as an object). Never compared.
    */
   readonly json?: true;
-  /**
-   * An INTEGER-backed boolean. **Empty today, and that is load-bearing**: the
-   * contract excludes booleans from `Scalar` precisely so `1 === true` cannot
-   * silently diverge between the two engines. The flag exists so that if a
-   * boolean column is ever added, the one place that must know how to
-   * re-materialize it is this map rather than each implementation.
-   */
-  readonly boolean?: true;
 }
 
 /** One index, mirroring a Dexie index of the same shape. */
@@ -391,13 +382,11 @@ export const LOCAL_STORE_SQLITE_SCHEMA: Readonly<Record<LocalTableName, SqliteTa
 
 /**
  * The column-type map, as the (de)hydration layer consumes it: for each table,
- * which columns exist, which are opaque JSON, which are INTEGER-backed
- * booleans, and which form the key.
+ * which columns exist, which may be null, and which form the key.
  *
  * This is the **single source** for the read-side materialization contract
  * (`plans/desktop-app.md` §4.4; WP3 brief A4): rows read back must be
- * JS-identical to Dexie's — JSON columns parsed, NULL as `null` and never
- * absent, integers exact. Deriving it from {@link LOCAL_STORE_SQLITE_SCHEMA}
+ * JS-identical to Dexie's — NULL as `null` and never absent, integers exact. Deriving it from {@link LOCAL_STORE_SQLITE_SCHEMA}
  * rather than restating it is what keeps it from drifting from the DDL.
  */
 export interface LocalTableColumnMap {
@@ -406,11 +395,6 @@ export interface LocalTableColumnMap {
   /** Assigned by the store, never by a plan. */
   readonly autoKeyColumn: string | null;
   readonly nullableColumns: readonly string[];
-  /** Opaque documents: serialized on write, parsed on read, never compared. */
-  readonly jsonColumns: readonly string[];
-  /** INTEGER-backed booleans. Empty today — see {@link SqliteColumn.boolean}. */
-  readonly booleanColumns: readonly string[];
-  readonly integerColumns: readonly string[];
 }
 
 function columnMapFor(schema: SqliteTableSchema): LocalTableColumnMap {
@@ -422,9 +406,6 @@ function columnMapFor(schema: SqliteTableSchema): LocalTableColumnMap {
     keyColumns: schema.primaryKey,
     autoKeyColumn: schema.autoKey,
     nullableColumns: pick((c) => c.nullable),
-    jsonColumns: pick((c) => c.json === true),
-    booleanColumns: pick((c) => c.boolean === true),
-    integerColumns: pick((c) => c.type === 'INTEGER'),
   };
 }
 
