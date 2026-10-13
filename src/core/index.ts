@@ -490,7 +490,7 @@ export type TidyPendingSummary = z.infer<typeof TidyPendingSummarySchema>;
 
 /**
  * One clarification question and its options. **Everything here is app-authored
- * and deterministic — no model call produces it** (`planClarification` in
+ * and deterministic — no model call produces it** (`analyzeInstructionScope` in
  * `supabase/functions/_shared/tidy-clarify.ts`). That is what makes answering
  * safe: `label` is display text only, and `scope` is the server's own object,
  * echoed here purely so the client can render and, later, name an option by its
