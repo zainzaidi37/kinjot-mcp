@@ -1367,11 +1367,19 @@ export const CHAT_PROPOSAL_STATES = [
   'failed',
 ] as const;
 
+/** The providers a thread can speak (`chat_threads.provider`); mirrored in `_shared/recall-request.ts`. */
+export const CHAT_PROVIDER_IDS = ['anthropic', 'openai'] as const;
+export type ChatProviderId = (typeof CHAT_PROVIDER_IDS)[number];
+
 export const ChatThreadSchema = z.object({
   id: uuid,
   user_id: uuid,
   title: z.string(),
   context_floor_seq: z.number().int().nonnegative(),
+  /** Set by the thread's first turn and never changed: the thread speaks this provider's wire. */
+  provider: z.enum(CHAT_PROVIDER_IDS),
+  /** The latest begun turn's model, a display convenience (the turn row's `model` is the record). */
+  model: z.string().nullable(),
   created_at: timestamptz,
   updated_at: timestamptz,
   deleted_at: timestamptz.nullable(),
@@ -1896,6 +1904,7 @@ export const CHAT_ERROR_CODES = [
   'thread_full',
   'not_found',
   'provider_declined',
+  'provider_mismatch',
 ] as const;
 export type ChatErrorCode = (typeof CHAT_ERROR_CODES)[number];
 
