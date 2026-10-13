@@ -9,11 +9,11 @@ import { z } from 'zod';
 /**
  * The `/admin` dashboard's wire contract (`plans/admin-analytics.md` §5).
  *
- * Three independent sources answer one request: Postgres (product), Lemon
- * Squeezy (revenue) and Cloudflare Web Analytics (traffic). Only `product` is
+ * Four independent sources answer one request: Postgres (product), Lemon
+ * Squeezy (revenue), Cloudflare Web Analytics (traffic) and Maileroo (email). Only `product` is
  * guaranteed — it is computed by `public.admin_analytics_product(p_days, p_day_to)`,
  * whose jsonb this schema mirrors verbatim so the Edge Function passes it
- * through after validating it. The two provider sections are discriminated
+ * through after validating it. The three provider sections are discriminated
  * unions on `status`, because a provider that is not configured, or that is
  * down, must degrade its own card and never the response: the function
  * validates against this schema before it replies, so a provider *shape drift*
@@ -195,12 +195,47 @@ export const AdminAnalyticsTrafficSchema = z.discriminatedUnion('status', [
 ]);
 export type AdminAnalyticsTraffic = z.infer<typeof AdminAnalyticsTrafficSchema>;
 
+/**
+ * One Maileroo usage meter. `limit` and `available` are null when the plan
+ * sets no cap on it (the provider's `quantity: -1`).
+ */
+export const AdminAnalyticsEmailUsageSchema = z
+  .object({ limit: count.nullable(), used: count, available: count.nullable() })
+  .nullable();
+export type AdminAnalyticsEmailUsage = z.infer<typeof AdminAnalyticsEmailUsageSchema>;
+
+/**
+ * The email section, read from Maileroo's `GET /v1/account`. Only the plan
+ * name, the subscription status and the three sending/receiving meters are
+ * kept: the account response also carries the holder's name, email and
+ * billing details, and none of those has a field here, so none can reach the
+ * page. A usage key is null when the provider sent no meter of that name.
+ * `rate_limited` is the provider's 429, never retried.
+ */
+export const AdminAnalyticsEmailSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('unconfigured') }),
+  z.object({ status: z.literal('rate_limited') }),
+  z.object({ status: z.literal('error'), error: z.string() }),
+  z.object({
+    status: z.literal('ok'),
+    plan: z.string().nullable(),
+    subscription_status: z.string().nullable(),
+    usage: z.object({
+      hourly_outbound: AdminAnalyticsEmailUsageSchema,
+      monthly_outbound: AdminAnalyticsEmailUsageSchema,
+      monthly_inbound: AdminAnalyticsEmailUsageSchema,
+    }),
+  }),
+]);
+export type AdminAnalyticsEmail = z.infer<typeof AdminAnalyticsEmailSchema>;
+
 export const AdminAnalyticsSchema = z.object({
   generated_at: z.string().datetime({ offset: true }),
   range: z.object({ days: z.number().int().min(1).max(365), from: isoDate, to: isoDate }),
   product: AdminAnalyticsProductSchema,
   revenue: AdminAnalyticsRevenueSchema,
   traffic: AdminAnalyticsTrafficSchema,
+  email: AdminAnalyticsEmailSchema,
 });
 export type AdminAnalytics = z.infer<typeof AdminAnalyticsSchema>;
 
