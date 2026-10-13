@@ -1905,6 +1905,7 @@ export const CHAT_ERROR_CODES = [
   'not_found',
   'provider_declined',
   'provider_mismatch',
+  'chat_unrecoverable',
 ] as const;
 export type ChatErrorCode = (typeof CHAT_ERROR_CODES)[number];
 
