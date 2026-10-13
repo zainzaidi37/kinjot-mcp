@@ -1110,8 +1110,28 @@ export const UsageLimitsSchema = z.object({
    * for that reason.
    */
   voice_max_seconds: z.number().int().positive().optional(),
+  /**
+   * Kin chat's offered models (`plans/kin-chat-models-2026-10-13.md` §8): the
+   * only lineup the client shows, `[]` unless the project's `CHAT_ENABLED` is
+   * on. `chat_default_model` is the server's default when it is offered, else
+   * null; `chat_cost` is the price per turn; `chat_model_label` the default's
+   * label for clients that predate the list.
+   *
+   * All four are `.optional()` for the voice fields' N−1 reason: an older
+   * server omits them. `provider`, `unit` and `per` are plain strings, not
+   * enums: a newer server's provider or unit must not fail this whole parse,
+   * which would take the Usage view down with it.
+   */
+  chat_models: z
+    .array(z.object({ id: z.string(), label: z.string(), provider: z.string() }))
+    .optional(),
+  chat_default_model: z.string().nullable().optional(),
+  chat_cost: z.object({ unit: z.string(), per: z.string() }).optional(),
+  chat_model_label: z.string().optional(),
 });
 export type UsageLimits = z.infer<typeof UsageLimitsSchema>;
+/** One entry of `usage-limits`' `chat_models`. */
+export type ChatModelOffer = NonNullable<UsageLimits['chat_models']>[number];
 
 export const AiSecretNameSchema = z.enum(['OPENAI_API_KEY', 'VOYAGE_API_KEY']);
 export type AiSecretName = z.infer<typeof AiSecretNameSchema>;
