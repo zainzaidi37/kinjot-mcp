@@ -1339,6 +1339,239 @@ export const ServerFolderSchema = FolderSchema.extend({ sync_seq: syncSeq });
 export const ServerTagSchema = TagSchema.extend({ sync_seq: syncSeq });
 export const ServerNoteTagSchema = NoteTagSchema.extend({ sync_seq: syncSeq });
 
+/*
+ * Kin chat (plans/kin-chat-2026-10-12.md §6.1, §8; 20261012192450_kin_chat.sql):
+ * three server-written tables the browser reads on demand and never syncs,
+ * like `recalls`. Only the chat function's service-only SQL writes them; the
+ * client may soft-delete a thread and decide a proposal through
+ * `chat_apply_proposal` / `chat_decline_proposal`.
+ */
+export const CHAT_ROLES = ['user', 'assistant', 'system'] as const;
+export const CHAT_TURN_STATUSES = [
+  'pending',
+  'complete',
+  'proposed',
+  'truncated',
+  'stopped',
+  'declined',
+  'failed',
+  'refused',
+] as const;
+export const CHAT_EFFORTS = ['low', 'medium', 'high'] as const;
+export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting'] as const;
+export const CHAT_PROPOSAL_STATES = [
+  'pending',
+  'applied',
+  'declined',
+  'expired',
+  'failed',
+] as const;
+
+export const ChatThreadSchema = z.object({
+  id: uuid,
+  user_id: uuid,
+  title: z.string(),
+  context_floor_seq: z.number().int().nonnegative(),
+  created_at: timestamptz,
+  updated_at: timestamptz,
+  deleted_at: timestamptz.nullable(),
+});
+export type ChatThread = z.infer<typeof ChatThreadSchema>;
+
+/** A note a tool touched, as the transcript shows it (never sent to the model). */
+export const ChatDisplayNoteSchema = z.object({ id: uuid, label: z.string(), title: z.string() });
+export type ChatDisplayNote = z.infer<typeof ChatDisplayNoteSchema>;
+export const ChatDisplayToolSchema = z.object({
+  call_id: z.string(),
+  name: z.string(),
+  state: z.string(),
+  summary: z.string(),
+  notes: z.array(ChatDisplayNoteSchema),
+});
+export type ChatDisplayTool = z.infer<typeof ChatDisplayToolSchema>;
+/**
+ * `chat_messages.display`: what the client renders. Every key is optional and
+ * unknown keys are tolerated (stripped), so a later server can add one without
+ * breaking a deployed client.
+ */
+export const ChatDisplaySchema = z.object({
+  text: z.string().optional(),
+  tools: z.array(ChatDisplayToolSchema).optional(),
+  proposal_ids: z.array(uuid).optional(),
+  chips: z.array(jsonbValue).optional(),
+  sources: z.array(jsonbValue).optional(),
+});
+export type ChatDisplay = z.infer<typeof ChatDisplaySchema>;
+/** One model round's token counts in a turn row's `usage` array. */
+export const ChatUsageRoundSchema = z.object({
+  input: z.number().int().nonnegative(),
+  cache_read: z.number().int().nonnegative(),
+  cache_write: z.number().int().nonnegative(),
+  output: z.number().int().nonnegative(),
+});
+export type ChatUsageRound = z.infer<typeof ChatUsageRoundSchema>;
+
+/**
+ * A `chat_messages` row as the client can read it: every column but `wire`,
+ * which `authenticated` holds no grant on. A turn row (id = turn_id) is the
+ * user's own message and alone carries the turn columns; the refinement
+ * mirrors `chat_messages_turn_columns`. Select the columns by name: `*` is
+ * refused because of `wire`.
+ */
+export const ChatMessageSchema = z
+  .object({
+    id: uuid,
+    thread_id: uuid,
+    user_id: uuid,
+    turn_id: uuid,
+    seq: z.number().int().positive(),
+    role: z.enum(CHAT_ROLES),
+    display: ChatDisplaySchema,
+    note_ids: z.array(uuid),
+    replayable: z.boolean(),
+    status: z.enum(CHAT_TURN_STATUSES).nullable(),
+    lease_until: timestamptz.nullable(),
+    effort: z.enum(CHAT_EFFORTS).nullable(),
+    model: z.string().nullable(),
+    usage: z.array(ChatUsageRoundSchema).nullable(),
+    charged: z.boolean().nullable(),
+    created_at: timestamptz,
+    updated_at: timestamptz,
+    deleted_at: timestamptz.nullable(),
+  })
+  .superRefine((row, ctx) => {
+    const turnRow = row.id === row.turn_id;
+    const valid = turnRow
+      ? row.role === 'user' &&
+        row.status !== null &&
+        row.effort !== null &&
+        row.model !== null &&
+        (row.status !== 'pending' || row.lease_until !== null)
+      : row.status === null &&
+        row.lease_until === null &&
+        row.effort === null &&
+        row.model === null &&
+        row.usage === null &&
+        row.charged === null;
+    if (!valid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'turn columns are set exactly on turn rows',
+        path: ['status'],
+      });
+    }
+  });
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+/** The `chat_messages` columns a client may select (all but `wire`). */
+export const CHAT_MESSAGE_CLIENT_COLUMNS = [
+  'id',
+  'thread_id',
+  'user_id',
+  'turn_id',
+  'seq',
+  'role',
+  'display',
+  'note_ids',
+  'replayable',
+  'status',
+  'lease_until',
+  'effort',
+  'model',
+  'usage',
+  'charged',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+] as const satisfies readonly (keyof ChatMessage)[];
+
+/** propose_edit's payload: a content-anchored replace plus metadata. */
+export const ChatEditPayloadSchema = z.object({
+  old_string: z.string().nullable().optional(),
+  new_string: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  add_tags: z.array(z.string()).nullable().optional(),
+  remove_tags: z.array(z.string()).nullable().optional(),
+  folder: z.string().nullable().optional(),
+});
+export const ChatAppendPayloadSchema = z.object({ text: z.string() });
+/** A setting card: the allow-list of ids is enforced in the chat function. */
+export const ChatSettingPayloadSchema = z.object({ id: z.string(), value: jsonbValue });
+
+const ChatProposalBaseSchema = z.object({
+  id: uuid,
+  thread_id: uuid,
+  user_id: uuid,
+  turn_id: uuid,
+  expected_title: z.string().nullable(),
+  state: z.enum(CHAT_PROPOSAL_STATES),
+  error_token: z.string().nullable(),
+  reported_turn_id: uuid.nullable(),
+  created_at: timestamptz,
+  decided_at: timestamptz.nullable(),
+  updated_at: timestamptz,
+  deleted_at: timestamptz.nullable(),
+});
+/**
+ * A `chat_proposals` row. `note_id` is null exactly for a setting
+ * (`chat_proposals_note_kind`), and `decided_at` is set exactly when the
+ * proposal is no longer pending (`chat_proposals_decided`).
+ */
+export const ChatProposalSchema = z
+  .discriminatedUnion('kind', [
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('edit'),
+      note_id: uuid,
+      payload: ChatEditPayloadSchema,
+    }),
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('append'),
+      note_id: uuid,
+      payload: ChatAppendPayloadSchema,
+    }),
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('setting'),
+      note_id: z.null(),
+      payload: ChatSettingPayloadSchema,
+    }),
+  ])
+  .superRefine((row, ctx) => {
+    if ((row.state === 'pending') !== (row.decided_at === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'decided_at is set exactly when the proposal is decided',
+        path: ['decided_at'],
+      });
+    }
+  });
+export type ChatProposal = z.infer<typeof ChatProposalSchema>;
+
+/**
+ * `chat_apply_proposal` / `chat_decline_proposal`'s answer. `note` is the
+ * updated `notes` row after an applied edit or append, else null; a foreign,
+ * missing or deleted proposal answers `{state: null, error_token: 'not_found'}`.
+ */
+export const CHAT_DECISION_ERROR_TOKENS = [
+  'not_found',
+  'not_pending',
+  'note_unavailable',
+  'payload_too_large',
+  'invalid_text',
+  'invalid_old_string',
+  'invalid_edit_noop',
+  'invalid_folder',
+  'invalid_tags',
+  'invalid_edit_empty',
+  'edit_no_match',
+  'edit_ambiguous',
+  'edit_title_changed',
+] as const;
+export const ChatDecisionResultSchema = z.object({
+  state: z.enum(CHAT_PROPOSAL_STATES).nullable(),
+  error_token: z.enum(CHAT_DECISION_ERROR_TOKENS).nullable(),
+  note: ServerNoteSchema.nullable(),
+});
+export type ChatDecisionResult = z.infer<typeof ChatDecisionResultSchema>;
+
 /**
  * `public.sync_status()`'s payload (20260920090000_sync_status.sql): the
  * snapshot watermark plus each synced table's highest `sync_seq` visible to
@@ -1595,7 +1828,7 @@ export {
 export const AiSafetyDeclineSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  feature: z.enum(['recall', 'gist', 'tidy']),
+  feature: z.enum(['recall', 'gist', 'tidy', 'chat']),
   provider: z.enum(['anthropic', 'openai']),
   category: z.string().max(64).nullable(),
   created_at: z.string().datetime({ offset: true }),
