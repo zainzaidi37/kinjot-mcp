@@ -728,13 +728,21 @@ const AgentActivityBaseSchema = z.object({
   id: uuid,
   user_id: uuid,
   note_id: uuid,
-  api_key_id: uuid,
-  actor: z.enum(['mcp', 'cli']),
+  api_key_id: uuid.nullable(),
+  actor: z.enum(['mcp', 'cli', 'chat']),
   version_id: uuid.nullable(),
   created_at: timestamptz,
 });
 
-export const AgentActivitySchema = z.discriminatedUnion('kind', [
+/**
+ * Who wrote an activity row. An MCP or CLI write names the key it came
+ * through; a Kin chat write (`chat`) came from the signed-in user's own
+ * session and has no key. The database enforces the same coupling:
+ * `(api_key_id is not null) = (actor in ('mcp','cli'))`.
+ */
+const AGENT_ACTIVITY_KEYED_ACTORS = ['mcp', 'cli'] as const;
+
+const AgentActivityKindsSchema = z.discriminatedUnion('kind', [
   AgentActivityBaseSchema.extend({
     kind: z.literal('capture'),
     detail: z.object({
@@ -761,6 +769,19 @@ export const AgentActivitySchema = z.discriminatedUnion('kind', [
     detail: z.object({ added: z.number().int().nonnegative() }),
   }),
 ]);
+
+export const AgentActivitySchema = AgentActivityKindsSchema.superRefine((row, ctx) => {
+  const keyed = (AGENT_ACTIVITY_KEYED_ACTORS as readonly string[]).includes(row.actor);
+  if ((row.api_key_id !== null) !== keyed) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: keyed
+        ? 'an mcp or cli activity row names its api key'
+        : 'a chat activity row has no api key',
+      path: ['api_key_id'],
+    });
+  }
+});
 export type AgentActivity = z.infer<typeof AgentActivitySchema>;
 
 /** Server-written Inbox rows: no sync cursor or client mutation surface. */
