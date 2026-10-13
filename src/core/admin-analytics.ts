@@ -205,9 +205,35 @@ export const AdminAnalyticsEmailUsageSchema = z
 export type AdminAnalyticsEmailUsage = z.infer<typeof AdminAnalyticsEmailUsageSchema>;
 
 /**
- * The email section, read from Maileroo's `GET /v1/account`. Only the plan
- * name, the subscription status and the three sending/receiving meters are
- * kept: the account response also carries the holder's name, email and
+ * Delivery health from Maileroo's statistics: the provider's 31-day timeline
+ * (oldest first), the current calendar month, and how many addresses are on
+ * the suppression list. Opens and clicks exist in the provider's answer and
+ * are deliberately absent here: they are tracking counts, and the privacy
+ * page promises no tracker beyond the page-view counter. Null when any of the
+ * three reads failed.
+ */
+export const AdminAnalyticsEmailDeliverySchema = z.object({
+  days: z.array(z.object({ date: isoDate, delivered: count, bounced: count, suppressions: count })),
+  month: z.object({ delivered: count, bounced: count, suppressions: count }),
+  suppressed_total: count,
+});
+export type AdminAnalyticsEmailDelivery = z.infer<typeof AdminAnalyticsEmailDeliverySchema>;
+
+/**
+ * The sending domain as Maileroo sees it. `tracking` is open/click tracking:
+ * reported so the page can WARN when it is on, never charted.
+ */
+export const AdminAnalyticsEmailDomainSchema = z.object({
+  name: z.string(),
+  dns_verified: z.boolean(),
+  tracking: z.boolean(),
+});
+export type AdminAnalyticsEmailDomain = z.infer<typeof AdminAnalyticsEmailDomainSchema>;
+
+/**
+ * The email section, read from Maileroo's `GET /v1/account` (plus the
+ * delivery and domain reads above). Only the plan name, the subscription
+ * status and the three sending/receiving meters are kept from the account: the account response also carries the holder's name, email and
  * billing details, and none of those has a field here, so none can reach the
  * page. A usage key is null when the provider sent no meter of that name.
  * `rate_limited` is the provider's 429, never retried.
@@ -225,6 +251,8 @@ export const AdminAnalyticsEmailSchema = z.discriminatedUnion('status', [
       monthly_outbound: AdminAnalyticsEmailUsageSchema,
       monthly_inbound: AdminAnalyticsEmailUsageSchema,
     }),
+    delivery: AdminAnalyticsEmailDeliverySchema.nullable(),
+    domain: AdminAnalyticsEmailDomainSchema.nullable(),
   }),
 ]);
 export type AdminAnalyticsEmail = z.infer<typeof AdminAnalyticsEmailSchema>;
@@ -485,3 +513,55 @@ export const AdminAuditQuerySchema = z.object({
   limit: z.number().int().min(1).max(200).optional(),
 });
 export type AdminAuditQuery = z.infer<typeof AdminAuditQuerySchema>;
+
+/* ---------- the drawer's mail trace (plans/admin-dashboard-audit-2026-10-12.md §4a) ---------- */
+
+/** The request: one account, by id. The function resolves the address itself. */
+export const AdminMailQuerySchema = z.object({
+  section: z.literal('mail'),
+  user_id: z.string().uuid(),
+});
+export type AdminMailQuery = z.infer<typeof AdminMailQuerySchema>;
+
+/** The delivery states a mail trace line can carry, from Maileroo's events. */
+export const ADMIN_MAIL_STATES = [
+  'accepted',
+  'delivered',
+  'deferred',
+  'bounced',
+  'suppressed',
+  'complained',
+] as const;
+export type AdminMailState = (typeof ADMIN_MAIL_STATES)[number];
+
+/**
+ * One account's mail from Kinjot over the last 14 days (Maileroo's log
+ * retention). Each line keeps the send time, Kinjot's own subject line, the
+ * latest meaningful delivery state (null when the log has none yet) and that
+ * event's SMTP reply, at most 160 characters, with any quoted `<…@…>` address
+ * redacted to `<…>`. Nothing else from the log is kept: no address,
+ * recipient list, sender, message id, tag, network address or user agent has
+ * a field here. `more` is the provider's `has_more` on the
+ * one page read. `suppressed` is an exact match on the account's address in
+ * the suppression list.
+ */
+export const AdminMailTraceSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('unconfigured') }),
+  z.object({ status: z.literal('rate_limited') }),
+  z.object({ status: z.literal('error'), error: z.string() }),
+  z.object({
+    status: z.literal('ok'),
+    window_days: z.literal(14),
+    items: z.array(
+      z.object({
+        at: isoInstant,
+        subject: z.string().max(200).nullable(),
+        state: z.enum(ADMIN_MAIL_STATES).nullable(),
+        detail: z.string().max(160).nullable(),
+      }),
+    ),
+    more: z.boolean(),
+    suppressed: z.object({ reason: z.string().max(200) }).nullable(),
+  }),
+]);
+export type AdminMailTrace = z.infer<typeof AdminMailTraceSchema>;
