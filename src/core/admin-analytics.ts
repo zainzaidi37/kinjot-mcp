@@ -65,8 +65,20 @@ export const AdminAnalyticsProductSchema = z.object({
    * `api_keys.last_used_at`, `auth.users.last_sign_in_at`) and true event
    * timestamps. Only the latest value of each survives, so **past days
    * undercount** and the UI says so under the chart.
+   *
+   * `by_day`, `wau`, `mau` and the cohort grid also count presence: a day a
+   * person signed in or had the app open, from Supabase Auth's log and
+   * sessions. `acted_by_day` is product events alone. `presence_source` is
+   * `sessions` when the sign-in log has no presence row in the range's last
+   * seven days — the Dashboard switch is off — so presence is latest-only.
    */
-  active: z.object({ by_day: AdminAnalyticsDaySeriesSchema, wau: count, mau: count }),
+  active: z.object({
+    by_day: AdminAnalyticsDaySeriesSchema,
+    acted_by_day: AdminAnalyticsDaySeriesSchema,
+    presence_source: z.enum(['audit_log', 'sessions']),
+    wau: count,
+    mau: count,
+  }),
   notes: z.object({
     live: count,
     trashed: count,
@@ -335,6 +347,13 @@ export const AdminUserRowSchema = z.object({
    * still has a place in the list.
    */
   last_active: isoInstant.nullable(),
+  /**
+   * The latest UTC day the account signed in or had the app open, from
+   * Supabase Auth's log and sessions; null when neither has a row. A day,
+   * never a time. Presence, not product activity: `last_active` and its sort
+   * do not read it.
+   */
+  last_seen: isoDate.nullable(),
   stage: z.enum(ADMIN_USER_STAGES),
   /**
    * Banned in GoTrue, and still banned now.
