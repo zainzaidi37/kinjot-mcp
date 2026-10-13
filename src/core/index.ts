@@ -1858,3 +1858,137 @@ export interface AiSafetyRpc {
   ai_pause_state: { Args: { p_user_id: string }; Returns: AiPauseState[] };
   admin_lift_ai_pause: { Args: { p_user_id: string }; Returns: undefined };
 }
+
+// Kin chat's stream contract (plans/kin-chat-2026-10-12.md §9.2). The `chat`
+// Edge Function's copies (`supabase/functions/_shared/chat/`) are pinned
+// against these in `supabase/tests/core-mirror.unit.test.ts`.
+
+/** The 100k-character cap on an agent edit's strings and on a chat proposal's text. */
+export const AGENT_EDIT_MAX_CHARS = 100_000;
+/** A note reference of at least this many hex characters is an id prefix (D17). */
+export const NOTE_ID_PREFIX_MIN_CHARS = 8;
+/** Proposal cards one chat turn may show; extra proposals are refused to the model. */
+export const CHAT_MAX_PROPOSALS_PER_TURN = 3;
+
+export const CHAT_STREAM_EVENT_NAMES = [
+  'turn',
+  'status',
+  'tool',
+  'answer.delta',
+  'proposal',
+  'chip',
+  'sources',
+  'done',
+  'error',
+] as const;
+export type ChatStreamEventName = (typeof CHAT_STREAM_EVENT_NAMES)[number];
+
+/** The `error` event codes and refusal codes the client maps (§9.2). */
+export const CHAT_ERROR_CODES = [
+  'chat_disabled',
+  'chat_model_unsupported',
+  'not_pro',
+  'over_quota',
+  'ai_paused',
+  'busy',
+  'rate_limited',
+  'duplicate_message',
+  'thread_full',
+  'not_found',
+  'provider_declined',
+] as const;
+export type ChatErrorCode = (typeof CHAT_ERROR_CODES)[number];
+
+/** The statuses a turn ends with, as `done` reports them (no `pending`, no `refused`). */
+export const CHAT_ENDED_STATUSES = [
+  'complete',
+  'proposed',
+  'truncated',
+  'stopped',
+  'declined',
+  'failed',
+] as const;
+export type ChatEndedStatus = (typeof CHAT_ENDED_STATUSES)[number];
+
+const ChatNoteRefSchema = z.object({
+  id: uuid,
+  label: z.string().regex(STORED_NOTE_LABEL_PATTERN).nullable(),
+  title: z.string(),
+});
+
+export const ChatStreamEventSchema = z.discriminatedUnion('event', [
+  z.object({
+    event: z.literal('turn'),
+    data: z.object({ thread_id: uuid, message_id: uuid }),
+  }),
+  z.object({
+    event: z.literal('status'),
+    data: z.object({ phase: z.enum(['thinking', 'tool', 'writing']) }),
+  }),
+  z.object({
+    event: z.literal('tool'),
+    data: z.object({
+      call_id: z.string().min(1),
+      name: z.string().min(1),
+      state: z.enum(['started', 'done', 'failed']),
+      summary: z.string(),
+      notes: z.array(ChatNoteRefSchema).optional(),
+    }),
+  }),
+  z.object({
+    event: z.literal('answer.delta'),
+    data: z.object({ text: z.string() }),
+  }),
+  z.object({
+    event: z.literal('proposal'),
+    data: z.object({
+      proposal_id: uuid,
+      kind: z.enum(['edit', 'append', 'setting']),
+      note: ChatNoteRefSchema.optional(),
+      old: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      title: z.string().optional(),
+      tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
+      folder: z.string().optional(),
+      setting: z.object({ id: z.string(), value: z.string() }).optional(),
+    }),
+  }),
+  z.object({
+    event: z.literal('chip'),
+    data: z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('open_tidy'),
+        instruction: z.string().max(MAX_TIDY_INSTRUCTION_CHARS),
+      }),
+      z.object({ kind: z.literal('open_setting'), setting: z.string().min(1) }),
+    ]),
+  }),
+  z.object({
+    event: z.literal('sources'),
+    data: z.object({ sources: z.array(ChatNoteRefSchema) }),
+  }),
+  z.object({
+    event: z.literal('done'),
+    data: z.object({
+      status: z.enum(CHAT_ENDED_STATUSES),
+      charged: z.boolean(),
+      persisted: z.boolean(),
+    }),
+  }),
+  z.object({
+    event: z.literal('error'),
+    // An open string, as Recall's: a newer function may send a code this
+    // bundle does not know, and the message must survive it.
+    data: z.object({ message: z.string(), code: z.string().optional() }),
+  }),
+]);
+export type ChatStreamEvent = z.infer<typeof ChatStreamEventSchema>;
+
+const CHAT_STREAM_EVENT_NAME_SET: ReadonlySet<string> = new Set(CHAT_STREAM_EVENT_NAMES);
+
+/** Unknown events are forward-compatible (`null`); known events are strictly validated. */
+export function parseChatStreamEvent(event: string, data: unknown): ChatStreamEvent | null {
+  if (!CHAT_STREAM_EVENT_NAME_SET.has(event)) return null;
+  return ChatStreamEventSchema.parse({ event, data });
+}
