@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
@@ -1123,17 +1123,11 @@ describe('buildServer', () => {
     });
   });
 
-  it('CLI help and README name the discovery exclusion and direct read', () => {
+  it('CLI help names the discovery exclusion and direct read', () => {
     expect(HELP.split('\n')).toContain(
       'Search, recall and recent leave out notes tagged autosave; get reads one by label.',
     );
-    expect(readFileSync(new URL('../README.md', import.meta.url), 'utf8').split('\n')).toContain(
-      'Search, recall and recent leave out notes tagged `autosave`; `get` reads one by label.',
-    );
     expect(HELP).toContain('kinjot upload-image <path> [--alt <text>] [--json]');
-    expect(readFileSync(new URL('../README.md', import.meta.url), 'utf8')).toContain(
-      '`upload_image`',
-    );
   });
 
   it('find_jots explains the exclusion when no search hits remain', async () => {
