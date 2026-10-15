@@ -154,8 +154,7 @@ export const AdminAnalyticsRevenueSchema = z.discriminatedUnion('status', [
     /**
      * True when any returned object is a Lemon Squeezy test object. Lemon
      * Squeezy separates test and live data by API key, not by a request flag,
-     * so this badge is the only thing between "revenue" and a test-key
-     * rehearsal (prod holds test keys on purpose today).
+     * so the revenue card must label test data separately from live revenue.
      */
     test_mode: z.boolean(),
     /**
@@ -423,10 +422,10 @@ export type AdminUserDetail = z.infer<typeof AdminUserDetailSchema>;
 /**
  * Which section of the dashboard a request asks for.
  *
- * One endpoint, three shapes, rather than three functions: the gate, the
- * `verify_jwt` pin and the service client are the same in every case, and a
- * second admin function would be a second place to get that wrong. `overview`
- * is the default so an older client that sends only `{ days }` keeps working.
+ * One endpoint for all sections: the gate, the `verify_jwt` pin and the service
+ * client are the same in every case, and a second admin function would be a
+ * second place to get that wrong. `overview` is the default so an older client
+ * that sends only `{ days }` keeps working.
  */
 export const AdminUsersQuerySchema = z.object({
   section: z.literal('users'),

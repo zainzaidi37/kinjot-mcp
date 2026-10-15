@@ -31,8 +31,8 @@ import { saveNoteLocally } from './local/save-note.js';
 import { resolveMode, type ModeResolution } from './mode.js';
 
 /**
- * What both surfaces call. `NotesApi` satisfies it structurally, so the account
- * path is the same object it always was — no wrapper, no behaviour change.
+ * What both surfaces call. `NotesApi` satisfies it structurally, so account
+ * commands and server tools can use the API object directly.
  */
 export interface JotBackend {
   uploadImage(input: UploadImageInput): Promise<UploadedImage>;
@@ -50,11 +50,11 @@ export interface JotBackend {
 }
 
 /**
- * The four reads are **deliberately not implemented** in local mode (recorded
- * scope decision, WP6 PR C). Search, recall, get and recent all have real
- * answers in the desktop app — MiniSearch, saved Recall history, the note list
- * — and reimplementing any of them against SQLite in the CLI would be a second
- * search stack to keep in step with the app's. So each one names the app.
+ * Search, recall, get and recent are unavailable through the local CLI. All
+ * four have real answers in the desktop app — MiniSearch, saved Recall history,
+ * the note list — and reimplementing any of them against SQLite in the CLI
+ * would be a second search stack to keep in step with the app's. So each one
+ * names the app.
  */
 export class LocalUnavailableError extends LocalModeError {}
 
@@ -145,25 +145,21 @@ function inboxLocalError(): LocalUnavailableError {
 }
 
 /**
- * The serve path's backend: re-resolves the mode on **every tool call**.
+ * The serve path's backend: re-resolves the mode on every tool call.
  *
- * The MCP server is long-lived and §5.4 is a per-invocation rule, so resolving
- * once at startup gets both failure shapes wrong. `kinjot use` would be frozen
- * until the host restarts the server. And row 4 — armed for every stored-key
- * user the moment they run the desktop app once (PR A) — would become a server
- * that fails to *start*, which is the one place its refusal (whose entire
- * justification is being actionable) cannot reach the agent. Per call, it
- * arrives as a tool error naming `kinjot use account`, and the agent relays it.
+ * The MCP server is long-lived and `plans/desktop-app.md` §5.4 is a
+ * per-invocation rule. Resolving once at startup would freeze `kinjot use`
+ * until the host restarts the server. A machine with both a pointer and key,
+ * but no selected mode, must report its refusal as a tool error naming
+ * `kinjot use account`, where the agent can relay it. A missing account key
+ * likewise errors on a tool call rather than preventing server startup.
  *
- * The account path moves with it: a missing key errors on the first tool call
- * now, instead of at startup — the same sentence, somewhere a person sees it.
- *
- * Per-call resolution opens one seam this closes: the MCP server caches the
- * previous jot's tag vocabulary and passes it into the next, so a mode switch
- * mid-session would normalize a local jot's tags against the *account's*
- * spellings (or vice versa) — account data steering writes into the local
- * library. The vocabulary hint is dropped on the first save and on every edit
- * after a target change until a save re-caches the target's own spellings.
+ * The server caches the previous jot's tag vocabulary. After a target change,
+ * using that hint would normalize local tags against account spellings or vice
+ * versa. Saves record their target before calling the backend and drop the hint
+ * when it differs from the previous save target. Edits drop the hint while
+ * their target differs from the last save target; they return no new
+ * vocabulary.
  */
 export function serveBackend(
   env: Record<string, string | undefined> = process.env,
@@ -187,8 +183,8 @@ export function serveBackend(
     editNote: (input) => {
       const { backend, resolution } = resolve();
       const target = resolution.mode === 'local' ? `local:${resolution.dir}` : 'account';
-      // Edits return no vocabulary, so only a successful jot can refresh the
-      // source of this hint. Keep dropping it on later edits until then.
+      // Edits return no vocabulary. Drop the hint while their target differs
+      // from the last attempted save target.
       const stale = lastSaveTarget !== undefined && lastSaveTarget !== target;
       return backend.editNote(stale ? { ...input, vocabulary: undefined } : input);
     },
@@ -205,12 +201,7 @@ export interface ResolvedBackend {
   readonly resolution: ModeResolution;
 }
 
-/**
- * Resolves the mode and builds the backend for it.
- *
- * The account branch is `new NotesApi(resolveConfig(env))` — byte-for-byte what
- * every command did before this PR, including which errors it raises and when.
- */
+/** Resolves the mode and builds the backend for it. */
 export function resolveBackend(
   env: Record<string, string | undefined> = process.env,
   makeApi: (env: Record<string, string | undefined>) => NotesApi = (e) =>

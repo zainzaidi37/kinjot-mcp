@@ -59,6 +59,5 @@ for (const note of notes) {
 
 library.close();
 // Disconnect only once the message is flushed: `send` immediately followed by
-// `disconnect` silently drops a payload too large to write synchronously —
-// safe at 6 UUIDs, but a trap one constant bump away.
+// `disconnect` can drop a payload too large to write synchronously.
 process.send({ type: 'done', ids }, () => process.disconnect());

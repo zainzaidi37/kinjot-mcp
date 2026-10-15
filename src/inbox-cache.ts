@@ -70,6 +70,6 @@ export function refreshMute(
     chmodSync(temp, 0o600);
     renameSync(temp, cachePath(dir));
   } catch {
-    /* best effort; the server is the authority */
+    /* A cache write failure leaves mute decisions to the server. */
   }
 }

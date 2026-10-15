@@ -8,8 +8,8 @@ import { configDir, configFilePath, loadStoredConfig } from './configFile.js';
 
 const LEGACY_DEFAULT_API_URL = 'https://opzbxxrjiiktduivkdwm.supabase.co/functions/v1/mcp-api';
 
-// Warm prod jots measured 1.6–4.2 s at the caller's edge vs 0.5–1.0 s
-// beside the us-east-1 database (2026-09-23).
+// Hosted Edge Functions run beside the us-east-1 database (CLAUDE.md). The
+// region is selected by query parameter; custom endpoints keep their URL.
 export const DEFAULT_API_URL = `${LEGACY_DEFAULT_API_URL}?forceFunctionRegion=us-east-1`;
 
 /** Old saved/default endpoints still mean production, including in CLI setup. */

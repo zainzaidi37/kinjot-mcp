@@ -1,5 +1,5 @@
-// The CLI's half of the pointer file (plans/desktop-app.md §5.3; the app's
-// half is `apps/desktop/src-tauri/src/pointer.rs`, PR A).
+// The CLI's half of the pointer file (plans/desktop-app.md §5.3; the app's half
+// is `apps/desktop/src-tauri/src/pointer.rs`).
 //
 // The app writes `~/.kinjot/local-library.json` on every launch, naming the
 // database it actually opened plus that library's identity and schema version.

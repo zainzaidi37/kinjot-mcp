@@ -35,13 +35,10 @@ import { cachedMuteState, refreshMute } from './inbox-cache.js';
 import { parseNoteLabel } from './core/note-label.js';
 
 /**
- * The running version, read from package.json rather than restated here, so the
- * two cannot drift. They already had: npm shipped 0.4.0 while this constant
- * still said 0.3.0, and it is what every MCP client is told in the initialize
- * handshake (`serverInfo.version`), so the drift was invisible locally and
- * wrong everywhere else. `../package.json` resolves from both `src/cli.ts` and
- * the built `dist/cli.js` — each is one directory below the package root — and
- * npm always ships package.json, so this holds for a global install too.
+ * The running version comes from package.json so the CLI and MCP initialize
+ * handshake (`serverInfo.version`) report the same value. `../package.json`
+ * resolves from both `src/cli.ts` and built `dist/cli.js`, each one directory
+ * below the package root. npm ships package.json in global installs too.
  */
 export const VERSION: string = (
   createRequire(import.meta.url)('../package.json') as { version: string }

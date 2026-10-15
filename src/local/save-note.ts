@@ -44,11 +44,12 @@ export interface LocalSaveNoteInput {
 /**
  * Applies one planned op.
  *
- * Every column of the table is named and bound, because the planner emits
- * complete rows and "absent is not a state" in the batch contract. `ifExists:
- * 'ignore'` — which only the `note_tags` insert carries — becomes
- * `INSERT OR IGNORE`, the SQL's `on conflict do nothing`. Every other op must
- * fail on conflict: that is how the planner's no-update-path quirk is enforced.
+ * The planner emits complete rows. Columns newer than the library schema are
+ * omitted only when their planned value is null; non-null values refuse the
+ * write. Every other column is named and bound. `ifExists: 'ignore'` — which
+ * only the `note_tags` insert carries — becomes `INSERT OR IGNORE`, the SQL's
+ * `on conflict do nothing`. Every other op must fail on conflict: that is how
+ * the planner's no-update-path quirk is enforced.
  */
 function applyOp(db: SqliteDatabase, op: SaveNoteOp, schemaVersion: number): void {
   const row = op.row as unknown as Record<string, unknown>;

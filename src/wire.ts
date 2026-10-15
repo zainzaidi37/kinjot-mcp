@@ -82,8 +82,8 @@ export const wireSchemas = {
   save_note: z.object({
     ai_excluded: z.unknown(),
     note: z.object({ id: z.string(), title: z.string(), created_at: z.string() }),
-    // This vocabulary hint has always been best-effort, including malformed
-    // hints from old deployments. It must never prevent a successful save.
+    // The vocabulary is a hint for later tag spelling. A missing or malformed
+    // hint must not turn a completed save into a parse failure.
     existing_tags: z.array(z.string()).optional().catch(undefined),
   }),
   list_recent_notes: z.object({ notes: z.array(searchHit) }),

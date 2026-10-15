@@ -163,8 +163,8 @@ describe('No AI hosted writes', () => {
   );
 });
 
-// Exercise the real applier with schema-4 columns. The vendored migration list
-// still ends at 3, so the production handshake cannot open version 4 yet.
+// Exercise the real applier with schema-4 columns. The migration list ends
+// at 3, so the fixture opens version 3 before adding the columns directly.
 function version4Library(dir: string): LocalLibrary {
   makeLibraryFixture(dir, { schemaVersion: 3 });
   const library = openLocalLibrary(dir);

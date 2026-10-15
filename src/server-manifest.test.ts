@@ -8,11 +8,9 @@ import { describe, expect, it } from 'vitest';
  * restates facts that already live in package.json — the version, twice, and
  * the npm identifier.
  *
- * Nothing kept them in step. A release that bumped package.json and forgot the
- * manifest would not fail any build: it surfaces later, at publish time, when
- * the registry rejects a `packages[].version` that does not match the version
- * actually on npm. That is a bounded failure, but it is discovered in the
- * middle of a release rather than here.
+ * The registry rejects a `packages[].version` that does not match the
+ * version on npm. Pinning the declarations here catches a mismatched bump
+ * before publication.
  *
  * `mcpName` is the field npm exposes for the registry's ownership check, so it
  * has to equal the manifest's `name` or the listing cannot be verified at all.

@@ -127,7 +127,7 @@ describe('image upload client', () => {
     { publicUrl: 'https://images.example/a.png\x1b]0;x\x07' },
     { publicUrl: 'https://images.example/a.png\n' },
   ])('refuses an unsafe grant before PUT: %j', async (change) => {
-    // A11, W3, W9: an unsafe grant rejects without exposing its signed URL or sending a PUT.
+    // An unsafe grant rejects without exposing its signed URL or sending a PUT.
     const signed = 'https://storage.example/sentinel-private-path?sentinel=private-token';
     const { api, requests } = apiWith(async () =>
       Response.json({ ...grant, uploadUrl: signed, ...change }),
@@ -162,7 +162,7 @@ describe('image upload client', () => {
     expect(sent).toEqual([UPLOAD]);
   });
 
-  // P22, P23, P2: exhausting either failure path rejects after exactly two attempts.
+  // Exhausting either failure path rejects after exactly two attempts.
   it('rejects after two thrown fetches or two 503 responses', async () => {
     const thrown = vi.fn<typeof fetch>().mockRejectedValue(new Error('network down'));
     await expect(putGrantedImage(grant, cleaned.bytes, thrown)).rejects.toThrow(
@@ -176,7 +176,7 @@ describe('image upload client', () => {
     expect(unavailable).toHaveBeenCalledTimes(2);
   });
 
-  // P18: status 500 is retryable, including the lower endpoint of the 5xx range.
+  // Status 500 is retryable, including the lower endpoint of the 5xx range.
   it('retries 500 and succeeds on the next response', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -186,7 +186,7 @@ describe('image upload client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  // P13, I17: the public caller gives each attempt its own core 60 s signal.
+  // The public caller gives each attempt its own core 60 s signal.
   it('creates a separate 60 second timeout for each PUT attempt', async () => {
     const first = new AbortController().signal;
     const second = new AbortController().signal;
@@ -206,7 +206,7 @@ describe('image upload client', () => {
     expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(second);
   });
 
-  // redirect removed: fetch must refuse redirects and retry a rejected redirect once.
+  // Fetch must refuse redirects and retry a rejected redirect once.
   it('refuses a redirected PUT and reports the exhausted retry', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
       if (init?.redirect === 'error') throw new Error('redirect refused');
@@ -263,7 +263,7 @@ describe('image upload client', () => {
           ),
       ),
     ).rejects.toThrow(/HTTP 400/);
-    // P5, P6: both statusCode and error belong to the exact duplicate shape.
+    // Both statusCode and error belong to the exact duplicate shape.
     for (const wrong of [
       { ...duplicate, statusCode: '400' },
       { ...duplicate, error: 'Conflict' },
@@ -277,7 +277,7 @@ describe('image upload client', () => {
     }
   });
 
-  // body cap removed: a duplicate prefix plus 5 KiB cannot be accepted as the recorded reply.
+  // A duplicate prefix plus 5 KiB must not be accepted as the recorded reply.
   it('caps duplicate response reads at 4 KiB and cancels the body', async () => {
     const duplicate = JSON.stringify({
       statusCode: '409',
@@ -311,7 +311,7 @@ describe('image upload client', () => {
   });
 
   it('checks expiry before a PUT, and never exposes the signed URL on failures', async () => {
-    // P16: an expired grant rejects without leaking the credential-bearing URL.
+    // An expired grant rejects without leaking the credential-bearing URL.
     const signed = 'https://storage.example/sentinel-private-path?sentinel=private-token';
     const clock = vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(1000);
     const noFetch = vi.fn<typeof fetch>();
@@ -345,7 +345,7 @@ describe('image upload client', () => {
     expect(String(retryError)).not.toContain('private-token');
     expect(oneFetch).toHaveBeenCalledTimes(1);
     retryClock.mockRestore();
-    // A11, P16: all failure paths reject and keep URL path and query out of the error.
+    // All failure paths reject and keep URL path and query out of the error.
     for (const failing of [
       vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 403 })),
       vi
@@ -402,7 +402,7 @@ describe('image upload client', () => {
         expect((error as Error).message).toContain(message);
       }
     }
-    // A9: only the exact older-backend phrase maps to unsupported_action.
+    // Only the exact older-backend phrase maps to unsupported_action.
     const { api: badRequest } = apiWith(async () =>
       Response.json({ error: 'bad request' }, { status: 400 }),
     );
@@ -434,7 +434,7 @@ describe('image upload client', () => {
     if (process.platform !== 'win32') {
       const fifo = join(dir, 'pipe');
       execFileSync('mkfifo', [fifo]);
-      // I18: a non-regular path is refused by stat before opening a device-like node.
+      // A non-regular path is refused by stat before opening a device-like node.
       const open = vi.spyOn(fs, 'open');
       await expect(
         Promise.race([
@@ -447,7 +447,7 @@ describe('image upload client', () => {
     expect(requests).toHaveLength(0);
   });
 
-  // I3, I5: exactly 25 MiB may sanitize and upload; one byte more stops before network.
+  // Exactly 25 MiB may sanitize and upload; one byte more stops before network.
   it('accepts the 25 MiB input boundary and strips its trailing padding', async () => {
     const boundary = join(dir, 'boundary.png');
     const padded = Buffer.alloc(ATTACHMENT_MAX_OBJECT_BYTES);
@@ -464,7 +464,7 @@ describe('image upload client', () => {
     expect(requests).toHaveLength(2);
   });
 
-  // I6, I7, I18: growth past fstat is refused and the handle closes once on each path.
+  // Growth past fstat is refused and the handle closes once on each path.
   it('refuses a file that grows after stat and closes handles on success and refusal', async () => {
     const original = await fs.stat(file);
     const close = vi.fn(async () => {});
@@ -503,7 +503,7 @@ describe('image upload client', () => {
     expect(requests).toHaveLength(2);
   });
 
-  // B2: serveBackend resolves local mode per call and refuses before any network request.
+  // serveBackend resolves local mode per call and refuses before any network request.
   it('refuses upload through serveBackend in local mode', async () => {
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
@@ -550,7 +550,7 @@ describe('image upload client', () => {
     expect(result.content[0]?.text).not.toContain(UPLOAD);
   });
 
-  // S3, S4, S5: the MCP description retains its three upload safety sentences.
+  // The MCP description retains its three upload safety sentences.
   it('describes the upload tool safety contract exactly', () => {
     const server = buildServer(new NotesApi({ apiUrl: API, apiKey: KEY }), 'test', {
       repoTag: null,
@@ -574,7 +574,7 @@ describe('image upload client', () => {
     );
   });
 
-  // S6, S10, S11, I9: the tool sanitizes its audit line, forwards alt, and rejects relative paths and failures.
+  // The tool sanitizes its audit line, forwards alt, and rejects relative paths and failures.
   it('handles MCP path, alt, audit, and errors', async () => {
     const controlled = join(dir, 'shot\x1b[31m\x07.png');
     writeFileSync(controlled, raw);

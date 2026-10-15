@@ -2,9 +2,9 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 /**
- * Tag hygiene is enforced in code, not in tool descriptions: lowercase,
- * whitespace collapsed to dashes, deduped, at most 5. Otherwise search
- * fragments into Auth/auth/authentication variants.
+ * Default tag spelling is lowercase with whitespace collapsed to dashes, so
+ * case and whitespace variants share a spelling. normalizeTags also dedupes and
+ * caps the result at 5; a vocabulary hint preserves existing spellings.
  */
 function normalizeTag(tag: string): string {
   return tag.trim().toLowerCase().replace(/\s+/g, '-');
@@ -36,13 +36,12 @@ export function normalizeTags(tags: string[], vocabulary?: string[]): string[] {
 }
 
 /**
- * The repo/project tag is detected here rather than supplied by the calling
- * agent, so it is always present and consistently spelled. MCP hosts spawn
- * stdio servers in the session's working directory: walk up to the git
- * toplevel and use its basename, falling back to the directory itself when
- * not inside a repo. A ceiling leaves the start directory eligible, but the
- * walk never enters the ceiling directory or its parents. Without a ceiling,
- * the walk continues to the filesystem root as before.
+ * The repo/project tag uses the detected git toplevel's basename rather than an
+ * agent-supplied name, so its spelling follows the checkout. Walk up from
+ * startDir, falling back to that directory's basename outside a repo. An empty
+ * normalized basename returns null. A ceiling leaves the start directory
+ * eligible, but the walk never enters the ceiling directory or its parents.
+ * Without a ceiling, the walk continues to the filesystem root.
  */
 export function detectRepoTag(startDir = process.cwd(), ceiling?: string): string | null {
   let dir = startDir;

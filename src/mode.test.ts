@@ -7,8 +7,8 @@ import { pointerPath } from './local/pointer.js';
 import { ModeError, resolveMode } from './mode.js';
 
 /**
- * §5.4's precedence table, rung by rung — including row 4, which PR A armed for
- * every existing CLI user who has run the desktop app once.
+ * The precedence table in plans/desktop-app.md §5.4, including the ambiguity
+ * when a stored key and a local-library pointer coexist without a chosen mode.
  */
 
 const GOOD_KEY = `kj_live_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V'.slice(0, 43)}`;

@@ -1,10 +1,8 @@
 // The two runtime floors local mode depends on, asserted before anything
 // touches a library (plans/desktop-app.md §4.6, §4.8).
 //
-// Both checks are **local-mode only**. Server mode has always run on whatever
-// Node the package installs on (`engines` was `>=18`), never loads
-// `node:sqlite`, and must keep working unchanged on an old runtime — so
-// nothing here may run on the account path.
+// These checks run only in local mode. The account path never loads
+// node:sqlite, so it does not need the SQLite runtime checks.
 
 import { createRequire } from 'node:module';
 

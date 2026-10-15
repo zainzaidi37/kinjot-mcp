@@ -61,7 +61,7 @@ export function configFilePath(dir: string): string {
 /**
  * Writes the config file, preserving whatever `loadStoredConfig` reads back.
  *
- * Read-modify-write rather than overwrite, because the file now carries two
+ * Read-modify-write rather than overwrite, because the file carries two
  * independent settings: `kinjot key` must not erase a stored mode, and
  * `kinjot use` must not erase the key.
  */
@@ -70,12 +70,10 @@ function writeStoredConfig(
   patch: Partial<Omit<StoredConfig, 'version'>>,
   version?: StoredConfig['version'],
 ): void {
-  // A corrupt existing file is recreated, not rethrown: `loadStoredKey`'s
-  // error text says "Run `kinjot key` to recreate it", and before `mode`
-  // existed the save was an unconditional overwrite — so the write commands
-  // are the documented repair path and must never be blocked by the state
-  // they exist to repair. What a garbage file loses is only what it already
-  // lost: nothing in it was readable.
+  // Recreate a corrupt file: loadStoredConfig tells the user to run
+  // `kinjot key` to recreate it. The write commands are the repair path, so an
+  // unreadable config must not block them. Only fields the loader can read are
+  // preserved.
   let existing: Partial<Omit<StoredConfig, 'version'>> = {};
   let existingIsValid = false;
   if (existsSync(configFilePath(dir))) {

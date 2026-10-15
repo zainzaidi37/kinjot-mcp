@@ -1,5 +1,5 @@
-// The two-process get-or-create race (plans/desktop-app.md §4.9, §6, §9; the
-// last item WP6 owed that no in-process test can reach).
+// The two-process get-or-create race (plans/desktop-app.md WP6, §4.9, §6, §9).
+// Separate OS processes exercise contention an in-process test cannot reach.
 //
 // What it proves: several **genuinely separate OS processes** writing
 // `kinjot add`-shaped notes into one local library, all claiming the same
@@ -11,8 +11,7 @@
 // removed: WAL (set by the desktop app at creation), the explicit
 // `busy_timeout` on the CLI's own connection (§4.3 — sqlx's defaults cover the
 // app's connections only), and the get-or-create *reads* running inside
-// `BEGIN IMMEDIATE` (PR C's review round). The third is the one this test was
-// written for: with the folder/tag lookups outside the transaction, every
+// `BEGIN IMMEDIATE`. With the folder/tag lookups outside the transaction, every
 // process reads "no folder named Race 0", every process plans one, and every
 // process inserts one — N folders with the same name, **no error anywhere**,
 // and no unique index in the SQLite schema to object. Verified by moving those
@@ -23,12 +22,10 @@
 // The children run a real build of this package rather than its sources — see
 // `race-child.mjs` for why, and `buildPackage` below for how.
 //
-// Still owed, and not claimed here: §4.9 wants this same race on Windows
-// against the **MSIX-installed** app, with the desktop app holding the file
-// open through its sqlx pool. That is a documented manual runbook
-// (`apps/desktop/README.md`, "Two-process race runbook") and a ZAIN-PC visit,
-// not this file: a Linux child-process race exercises SQLite's locking, not
-// WebView2, AV scanners or MSIX redirection.
+// §4.9's Windows/MSIX race, with the desktop app holding the file open through
+// its sqlx pool, is a manual runbook (`apps/desktop/README.md`, "Two-process
+// race runbook"), not this file: a Linux child-process race exercises SQLite's
+// locking, not WebView2, AV scanners or MSIX redirection.
 
 import { execFileSync } from 'node:child_process';
 import { fork, type ChildProcess } from 'node:child_process';
@@ -206,10 +203,8 @@ describe('two-process get-or-create race', () => {
   });
 
   it('leaves one folder and one tag per name, every note linked, and no SQLITE_BUSY', async () => {
-    // A throwaway config root instead of a developer's real ~/.kinjot — the
-    // hand-off's "via KINJOT_CONFIG_DIR" is discharged by passing the dir as
-    // an argument (the env var is also set on the children, but the argument
-    // is what they read).
+    // Pass a throwaway config root instead of the developer's ~/.kinjot. The
+    // children read the directory argument; they also receive KINJOT_CONFIG_DIR.
     dir = mkdtempSync(join(tmpdir(), 'kinjot-race-'));
     makeLibraryFixture(dir);
 
@@ -220,9 +215,9 @@ describe('two-process get-or-create race', () => {
         { label: outcome.label, code: outcome.code, stderr: outcome.stderr },
         `${outcome.label} must exit cleanly`,
       ).toMatchObject({ code: 0 });
-      // The failure §8 names: "two processes racing get-or-create without
-      // busy_timeout → SQLITE_BUSY surfacing as a failed jot". Nothing may
-      // reach the user, so nothing may reach stderr either.
+      // The failure plans/desktop-app.md §8 names: two processes racing
+      // get-or-create without busy_timeout surface SQLITE_BUSY as a failed jot.
+      // Nothing may reach the user, so nothing may reach stderr either.
       expect(outcome.stderr).not.toMatch(/SQLITE_BUSY|database is locked|is busy/i);
       expect(outcome.ids, `${outcome.label} must report every id it wrote`).toHaveLength(
         NOTES_PER_CHILD,

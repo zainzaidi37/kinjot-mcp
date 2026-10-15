@@ -4,7 +4,6 @@
 // and then *checks* it, and every failure is a refusal to write rather than a
 // fall-through to the account path.
 //
-// What is deliberately absent: any path that could create a database.
 // Creation, WAL and migration belong to the desktop app alone (§5.3, §4.3), so
 // a missing file is a hard error and a file that is not in WAL is a corrupt
 // installation the CLI reports rather than "fixes". The CLI's own obligations
@@ -57,7 +56,7 @@ export interface LocalLibrary {
   readonly path: string;
   /**
    * `meta.workspace_uuid` — the identity every row local mode writes carries as
-   * its `user_id` (§5.1; the desktop's local mode does the same, WP6 B3).
+   * its `user_id` (§5.1; the desktop's local mode does the same).
    */
   readonly workspaceId: string;
   /** `MAX(version)` of `_sqlx_migrations`, the library's own schema version. */
@@ -102,10 +101,10 @@ export function openLocalLibrary(dir: string): LocalLibrary {
   const DatabaseSync = loadSqlite();
   let db: SqliteDatabase;
   try {
-    // Opened read-write. `existsSync` above is what keeps this from creating a
-    // library: node:sqlite creates on open, and a CLI-minted database is an
-    // orphan the app never opens (§5.3). The window between the check and the
-    // open belongs to the app, which only ever creates this file.
+    // Opened read-write. A missing path is refused above, but DatabaseSync can
+    // create a file if the path disappears between that check and open. The
+    // handshake below then refuses a file without library metadata
+    // (`plans/desktop-app.md` §5.3).
     db = new DatabaseSync(pointer.db_path, { enableForeignKeyConstraints: true });
   } catch (error) {
     throw new LocalModeError(
@@ -193,7 +192,7 @@ export function openLocalLibrary(dir: string): LocalLibrary {
     // is to try again, never to recreate anything.
     if (isSqliteBusy(error)) throw busyRefusal(pointer.db_path, error);
     // The first statement that actually reads the file is the version query,
-    // now inside the bound but outside any per-step handler — so a truncated or
+    // inside the bound but outside any per-step handler — so a truncated or
     // non-SQLite `library.db` lands here as a raw SqliteError, and it must
     // leave in the same voice as every other refusal on this path.
     throw new LocalModeError(
@@ -207,9 +206,9 @@ export function openLocalLibrary(dir: string): LocalLibrary {
 const SQLITE_BUSY = 5;
 
 /**
- * The one refusal for contention that outlived {@link BUSY_TIMEOUT_MS}, on
- * the open path and the write path alike: the library is fine, nothing was
- * written, and the advice is to try again — never to recreate anything.
+ * Refuses contention that outlived {@link BUSY_TIMEOUT_MS}, on both the open
+ * and write paths. A busy error reports a lock, not library corruption; advise
+ * retrying rather than recreating the file. No write was committed.
  */
 export function busyRefusal(path: string, error: unknown): LocalModeError {
   return new LocalModeError(
@@ -259,13 +258,10 @@ function readWorkspaceUuid(db: SqliteDatabase, path: string): string {
 }
 
 /**
- * `MAX(version)` of `_sqlx_migrations` — the migrator's own bookkeeping for the
- * file, which is what `Library::schema_version` reports and what the pointer
- * carries.
- *
- * **Not a `meta` row.** §5.3's prose says the CLI reads
- * `meta(workspace_uuid, schema_version)`; only the first half of that exists,
- * and PR A's annotation under §7 item 6 is the correction this implements.
+ * `MAX(version)` of `_sqlx_migrations` is the library's schema version, as
+ * `Library::schema_version` and the pointer report it (`plans/desktop-app.md`
+ * §7 item 6's schema-version correction). `meta` holds the workspace identity;
+ * the schema version comes from migration bookkeeping.
  */
 function readSchemaVersion(db: SqliteDatabase, path: string): number {
   let value: unknown;

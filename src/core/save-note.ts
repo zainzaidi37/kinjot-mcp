@@ -5,16 +5,12 @@
 // Edit the source module and re-run; CI fails on any difference.
 
 /**
- * Pure planning functions for the save-note operation
- * (`plans/desktop-app.md` §6, "Shared save-note semantics").
+ * Pure planning functions for the save-note operation (`plans/desktop-app.md`
+ * §6, "Shared save-note semantics").
  *
- * `mcp_save_note` — the Postgres function the MCP server and CLI have always
- * written through — is the only place in the product where "jot this down,
- * into this folder, with these tags" is spelled out. Phase 8 gives the CLI a
- * *local* library to write to, with no Postgres behind it, so that logic has
- * to exist twice. Ported by hand it would drift, and the drift would be
- * silent: the same `jot` command producing a different tag row depending on
- * whether the user happened to be signed in.
+ * Account captures write through `mcp_save_note`; local captures write to
+ * SQLite with no Postgres behind it. The folder and tag rules must agree in
+ * both paths, or the same `jot` command can produce different rows by mode.
  *
  * So the logic is ported **once, here, as a pure function**, and a conformance
  * suite (`supabase/tests/save-note-conformance.test.ts`) diffs the rows this
@@ -25,9 +21,9 @@
  *
  * `(existing folders, existing tags, input) -> row insert ops`. This module
  * reads nothing and writes nothing; the caller queries its own store for the
- * two lookups the SQL performs, hands them in, and applies the returned ops.
- * §6 rejects an abstract store interface in `packages/core` explicitly — it
- * would grow a second `NotesRepo` beside the frozen one.
+ * two lookups the SQL performs, hands them in, and applies the returned ops. §6
+ * rejects an abstract store interface in `packages/core` explicitly — it would
+ * grow a second `NotesRepo` beside the frozen one.
  *
  * ## Purity: no clock, no crypto
  *
@@ -54,7 +50,7 @@
  * - `sync_seq` = `null`, meaning "no server revision yet" — the local
  *   schemas' documented reading (see `syncSeq` in `index.ts`). A locally
  *   planned row has never been through a Postgres transaction, so it has no
- *   xid to carry, and Phase 4's flusher reads null as "must not exist on the
+ *   xid to carry, and the flusher reads null as "must not exist on the
  *   server". Writing a fabricated number here would make the row look synced.
  * - `deleted_at` = `null`, `pinned_at`/`pinned_in` = `null`: the SQL names
  *   none of these columns either, so they take their Postgres defaults, all
@@ -67,8 +63,8 @@
  * ## Faithful ports of things that look like bugs
  *
  * Four behaviours below are quirks of the SQL that a hand-port naturally
- * "corrects". Each is live behaviour that user data already depends on, so
- * each is reproduced deliberately and named in the conformance matrix:
+ * "corrects". Each is live behaviour that user data already depends on, so each
+ * is reproduced deliberately and named in the conformance matrix:
  *
  * 1. **Folders match case-insensitively; tags match case-sensitively.**
  *    `lower(name) = lower(trim(p_folder))` for folders, plain `name = v_tag`
@@ -83,7 +79,7 @@
  *    this module uses for the folder lookup, the stored folder name and tags.
  *    The one exception is the reserved-name refusal, which follows the web's
  *    JavaScript `trim()` (so `"Trash\t"` is refused, as the web would read it
- *    as Trash), as the SQL has since
+ *    as Trash); see
  *    `20260927220000_mcp_save_note_trash_spelling.sql` (#679).
  * 3. **The folder lookup compares `lower(name)`, not `lower(trim(name))`.**
  *    An existing folder stored as `" Work "` is not found by the input
@@ -114,14 +110,13 @@
  *   instead. {@link SaveNoteInput.source} is optional, and omitting it means
  *   `'mcp'` — the SQL argument default, not NULL.
  *
- * ## Locale and encoding, where the two engines cannot be made identical
+ * ## Locale and encoding
  *
- * `lower()` in Postgres follows the database collation; `toLowerCase()`
- * follows Unicode's full case mapping. They agree on ASCII, which is what the
- * folder comparison sees in practice, and are documented here rather than
- * papered over. Likewise `char_length` counts code points where JS `.length`
- * counts UTF-16 code units, so {@link selectTagVocabulary} spreads the string
- * before measuring it.
+ * `lower()` in Postgres follows the database collation; `toLowerCase()` follows
+ * Unicode's full case mapping. They agree on ASCII; non-ASCII folder names can
+ * compare differently under the database collation. Likewise `char_length`
+ * counts code points where JS `.length` counts UTF-16 code units, so
+ * {@link selectTagVocabulary} spreads the string before measuring it.
  */
 
 /**
@@ -419,10 +414,11 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
 }
 
 /**
- * Live case-insensitive matches, ordered by exclusion membership then created_at.
- * Stored names are not trimmed (quirk 3), and no parent_id predicate applies:
- * nested folders may still be write targets, even when excluded from reads.
- * Without an exclusion set, the lookup orders by created_at alone as before.
+ * Live case-insensitive matches, ordered by exclusion membership then
+ * created_at. Stored names are not trimmed (quirk 3), and no parent_id
+ * predicate applies: nested folders may still be write targets, even when
+ * excluded from reads. Without an exclusion set, the lookup orders by
+ * created_at alone.
  *
  * SQL ties on created_at are arbitrary. Here ties break on id; the conformance
  * fixtures avoid tied instants and assert that using compareTimestamps.
@@ -464,13 +460,13 @@ function isOlder(candidate: ExistingFolder, incumbent: ExistingFolder): boolean 
  * `Date.parse` truncates to milliseconds, and Postgres timestamps carry
  * microseconds — two folders written 40µs apart would tie here, order fine on
  * the server, and get decided locally by a UUID comparison, which is a coin
- * flip that picks the wrong folder for the user's note. String comparison
- * fails differently: a local library legitimately holds **both** spellings of
- * the same instant, because rows the planner writes carry
+ * flip that picks the wrong folder for the user's note. String comparison fails
+ * differently: a local library legitimately holds **both** spellings of the
+ * same instant, because rows the planner writes carry
  * `new Date().toISOString()` (`…T03:31:30.547Z`, always three fractional
  * digits) while rows the sync pull mirrors carry PostgREST's rendering
- * (`…T03:31:30.547365+00:00`, an offset and a variable number of digits). `'4'
- * < 'Z'` would make the *later* of those sort first.
+ * (`…T03:31:30.547365+00:00`, an offset and a variable number of digits).
+ * `'4' < 'Z'` would make the *later* of those sort first.
  *
  * So the comparison is on a parsed `(epoch milliseconds, nanoseconds)` pair.
  * Exported because the conformance harness has to assert its fixtures at
@@ -479,10 +475,10 @@ function isOlder(candidate: ExistingFolder, incumbent: ExistingFolder): boolean 
  *
  * **Throws on an unparseable value** rather than ordering it arbitrarily. A
  * `created_at` that is not a timestamp cannot have come from either writer, so
- * it is a corrupted row or a caller passing the wrong column; the previous
- * `Date.parse` behaviour turned that into `NaN`, where every comparison is
- * false and the incumbent silently won. A wrong folder chosen in silence is
- * worse than a failed save that says why.
+ * it is a corrupted row or a caller passing the wrong column. Comparing an
+ * unchecked `Date.parse` result of `NaN` makes every comparison false and
+ * silently keeps the incumbent. A wrong folder chosen in silence is worse than
+ * a failed save that says why.
  */
 export function compareTimestamps(a: string, b: string): number {
   const [aMillis, aNanos] = instant(a);
@@ -506,9 +502,8 @@ function instant(value: string): [number, number] {
   if (match === null) {
     throw new Error(`save-note: not an ISO-8601 timestamp: ${JSON.stringify(value)}`);
   }
-  // Every group is non-optional in the pattern except the fraction, but
-  // `noUncheckedIndexedAccess` cannot see that, and a default is cheaper than
-  // asserting.
+  // Only the fraction is optional in the pattern. Defaults satisfy
+  // noUncheckedIndexedAccess, which cannot infer the capture groups.
   const [, date = '', time = '', fraction = '', offset = ''] = match;
   // Parsed without the fraction, so the result is a whole number of seconds
   // and carries no float rounding; the fraction is compared separately at full

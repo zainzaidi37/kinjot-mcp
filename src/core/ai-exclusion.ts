@@ -18,8 +18,9 @@ type AiNote = Pick<Note, 'deleted_at' | 'folder_id' | 'trashed_from_folder_id'>;
 /**
  * The exclusion set over whatever folders are given, live or dead. The server
  * also seeds from dead No AI folders. Client callers (listFolders/app.folders)
- * pass live folders and rely on P1b's server cascade: a dead No AI folder's
- * notes go to Trash marked, and its children keep the flag. Move callers pass
+ * pass live folders and rely on the server cascade
+ * (`plans/private-folders-2026-10-06.md` §4.5, §4.6): a dead No AI folder's notes
+ * go to Trash marked, and its children keep the flag. Move callers pass
  * tombstones deliberately to predict writes targeting a dead excluded folder.
  */
 export function aiExcludedFolderIds(folders: readonly AiFolder[]): Set<string> {
@@ -125,7 +126,10 @@ export type AiEligibilityMove =
   | { kind: 'folder'; folderId: string; parentId: string | null }
   | { kind: 'merge'; sourceId: string; targetId: string };
 
-/** Notes a proposed gesture would release to agents/providers (D6). Pure and bounded by input size. */
+/**
+ * Notes a proposed gesture would release to agents/providers
+ * (`plans/private-folders-2026-10-06.md` D6). Pure and bounded by input size.
+ */
 export function notesBecomingAiEligible<T extends AiNote & { id: string }>(
   folders: readonly AiFolder[],
   notes: readonly T[],

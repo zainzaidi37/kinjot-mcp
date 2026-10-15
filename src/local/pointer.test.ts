@@ -7,14 +7,11 @@ import { pointerPath, readPointer, POINTER_VERSION } from './pointer.js';
 /**
  * The CLI's half of `~/.kinjot/local-library.json`, against the **app's** bytes.
  *
- * Until this file existed, every test of this reader read a pointer the CLI's
- * own fixture had written (`library-fixture.ts`), so the Rust writer and the TS
- * reader had never met: the shape lived in three independent declarations
- * (`apps/desktop/src-tauri/src/pointer.rs`, this module, and the webview's Zod
- * schema) with nothing comparing them. `packages/core/fixtures/local-pointer/v1.json`
- * is the one literal all three now read — written in the exact form
- * `serde_json::to_string_pretty` produces, field order included, so "the CLI
- * parses the fixture" is a statement about what the app actually writes.
+ * `packages/core/fixtures/local-pointer/v1.json` is the literal shared by the
+ * Rust writer (`apps/desktop/src-tauri/src/pointer.rs`), the CLI reader and
+ * the webview's Zod schema. Its format matches `serde_json::to_string_pretty`,
+ * field order included, so this tests the bytes the app writes, rather than
+ * a pointer from the CLI's own `library-fixture.ts`.
  *
  * The public mirror runs these tests too. `emit:mcp-core` copies the shared
  * bytes into src/core/fixtures; the monorepo's generator drift test and CI
@@ -57,8 +54,8 @@ describe('the shared pointer fixture', () => {
   });
 
   it('parses through the reader the CLI actually uses', () => {
-    // The assertion the two sides never made before: the app's bytes, the CLI's
-    // parser, no fixture of the CLI's own in between.
+    // The app's bytes go through the CLI's parser without a CLI-authored
+    // pointer fixture in between.
     expect(readPointer(rootWith(GOLDEN))).toEqual({
       version: POINTER_VERSION,
       db_path: '/home/example/.kinjot/local/library.db',
@@ -70,8 +67,8 @@ describe('the shared pointer fixture', () => {
 
 describe('readPointer refuses a pointer it cannot trust', () => {
   // Every case here is a **refusal**, never a fall-through to the account path:
-  // that fall-through is the §5.4 privacy violation the pointer exists to
-  // prevent. The prose is contract — `library.test.ts` asserts three of these
+  // that fall-through is the privacy violation the pointer exists to prevent
+  // (plans/desktop-app.md §5.4). The prose is contract — `library.test.ts` asserts three of these
   // four messages through `openLocalLibrary` — so the cases below pin the
   // message, not just the throw.
 

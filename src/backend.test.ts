@@ -11,8 +11,8 @@ import { buildServer } from './server.js';
 import type { SqliteDatabaseConstructor } from './local/runtime.js';
 
 /**
- * Mode resolution as the two surfaces actually meet it: the CLI commands and
- * the MCP tools, through one resolver (§5.4).
+ * Mode resolution as the CLI commands and MCP tools meet it, through one
+ * resolver (plans/desktop-app.md §5.4).
  */
 
 const DatabaseSync = (

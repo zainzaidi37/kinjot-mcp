@@ -65,16 +65,14 @@ export const V1_TABLE_NAMES = [
 ] as const;
 
 /**
- * Migration 2 (Phase 8 WP6, signed off 2026-08-05): the two tables a **local**
- * library holds and a signed-in cache does not.
+ * Migration 2 adds the two tables a local library holds and a signed-in cache
+ * does not.
  *
- * Version history and saved Recall answers are local mode's own content — they
- * have no server row behind them and never sync — and until now they existed
- * only as Dexie tables on `DemoDatabase`. Moving desktop local mode onto the
- * SQLite library (`plans/desktop-app.md` §7 item 6) needs them here, or the
- * port silently drops two shipped features. Widening the table set was the
- * explicit alternative to inventing a second store, and it is additive: nothing
- * about the op or precondition vocabulary changes.
+ * Version history and saved Recall answers are local mode's own content: they
+ * have no server row behind them and never sync. The SQLite library needs both
+ * to serve the same features as DemoDatabase. Adding tables to the shared store
+ * avoids a second store; the op and precondition vocabulary stays the same
+ * (`plans/desktop-app.md` §7 item 6).
  */
 export const V2_TABLE_NAMES = ['note_versions', 'recalls'] as const;
 
@@ -91,12 +89,10 @@ export type LocalTableName = (typeof LOCAL_TABLE_NAMES)[number];
 /**
  * Columns present in the current record but introduced after a shipped schema.
  *
- * An entry newer than the last of `SQLITE_MIGRATIONS` is the shared half of a
- * schema still to ship: the record carries it, so the browser cache's column
- * check admits it, while every shipped migration renders without it. Version 4
- * (folder pins and AI exclusion columns) is that today; its migration, the
- * Rust column map and the fixture follow in the desktop half while desktop
- * builds are paused, as version 3's did.
+ * An entry newer than the last of `SQLITE_MIGRATIONS` is present in the
+ * browser's column map but omitted from every emitted migration. The local CLI
+ * omits it from writes only when its value is null; a non-null value refuses
+ * the write (`packages/mcp/src/local/save-note.ts`, `applyOp`).
  */
 export const ADDED_COLUMNS = [
   { version: 3, table: 'notes', column: 'short_id' },
@@ -310,8 +306,8 @@ export const LOCAL_STORE_SQLITE_SCHEMA: Readonly<Record<LocalTableName, SqliteTa
       { name: 'idx_outbox_state_leaseUntil', columns: ['state', 'leaseUntil'] },
     ],
   },
-  // IdMapping (db.ts). `owned` and `disposition` are optional on the type:
-  // Phase 4 identity rows predate them, Phase 6b adoption rows carry them.
+  // IdMapping (db.ts). Identity mappings can omit `owned` and `disposition`;
+  // adoption mappings carry them, so these columns are nullable.
   idMap: {
     columns: {
       table: TEXT,
@@ -385,9 +381,10 @@ export const LOCAL_STORE_SQLITE_SCHEMA: Readonly<Record<LocalTableName, SqliteTa
  * which columns exist, which may be null, and which form the key.
  *
  * This is the **single source** for the read-side materialization contract
- * (`plans/desktop-app.md` §4.4; WP3 brief A4): rows read back must be
- * JS-identical to Dexie's — NULL as `null` and never absent, integers exact. Deriving it from {@link LOCAL_STORE_SQLITE_SCHEMA}
- * rather than restating it is what keeps it from drifting from the DDL.
+ * (`plans/desktop-app.md` §4.4): rows read back must be JS-identical to Dexie's
+ * — NULL as `null` and never absent, integers exact. Deriving it from
+ * {@link LOCAL_STORE_SQLITE_SCHEMA} rather than restating it is what keeps it
+ * from drifting from the DDL.
  */
 export interface LocalTableColumnMap {
   readonly columns: readonly string[];
@@ -472,8 +469,8 @@ export const LOCAL_STORE_REQUIRED_COLUMNS: Readonly<Record<LocalTableName, reado
  *    while `intentId` and `state` *are* declared standalone there and so stay
  *    admissible even though SQLite serves them from compounds.
  *
- * This is what keeps the structural indexed read (`plans/desktop-app.md` §7 item
- * 6, PR B2) from becoming a general query surface — a caller may name a column
+ * This is what keeps the structural indexed read (`plans/desktop-app.md` §7
+ * item 6) from becoming a general query surface — a caller may name a column
  * the schema indexes on both engines, and nothing else — and both sides pin the
  * resulting set literally, so adding an index forces a conscious decision here
  * rather than silently widening a read surface.
@@ -513,18 +510,19 @@ export function isLocalStoreColumnRequired(table: LocalTableName, column: string
  * Why a value cannot be stored in a column, or null if it can.
  *
  * **This is the compensating control for not declaring the tables `STRICT`.**
- * The DDL relies on column affinity, which silently *converts* a value of the
- * wrong type (a float into an INTEGER column, a number into a TEXT one) rather
- * than rejecting it — chosen deliberately, because engine-specific rejection is
- * the divergence class the whole schema exists to prevent. But silent
- * conversion has to be traded for something, and this is it: the malformed-plan
- * boundary refuses what a STRICT table would have refused, in *both* engines, at
- * the point where it is a programmer error with a stack trace rather than a
- * mystery value on disk.
+ * The tables use affinity rather than STRICT rejection so SQLite does not
+ * reject values that Dexie accepts. Column affinity can convert values (a
+ * number into TEXT) or retain another storage class (a fractional number as
+ * REAL in an INTEGER column). Dexie retains the input value, so relying on
+ * SQLite alone can make reads differ between engines. The malformed-plan
+ * boundary checks values in both engines before storage and reports a
+ * programmer error with a stack trace, rather than leaving a converted or
+ * unexpected value on disk.
  *
- * Deliberately narrow. It answers "could this value change shape on the way into
- * that column", nothing else — not whether a timestamp parses, not whether an
- * enum member is known. Those are Zod's, at the boundary where the row is built.
+ * Deliberately narrow. It answers "could this value change shape on the way
+ * into that column", nothing else — not whether a timestamp parses, not whether
+ * an enum member is known. Those are Zod's, at the boundary where the row is
+ * built.
  */
 export function localStoreColumnTypeError(
   table: LocalTableName,
@@ -554,9 +552,9 @@ export function localStoreColumnTypeError(
     if (typeof value !== 'number') {
       return `${table}.${column} is declared INTEGER, got ${typeof value}`;
     }
-    // INTEGER affinity converts a float that happens to be integral and drops
-    // nothing; a genuinely fractional one is stored as REAL in an INTEGER
-    // column, which Dexie would have kept as-is and no comparison would match.
+    // INTEGER affinity stores integral numbers as INTEGER and fractional ones
+    // as REAL. Refuse fractional values to keep integer columns consistent with
+    // the row schemas.
     if (!Number.isInteger(value)) {
       return `${table}.${column} is declared INTEGER, got the fractional number ${value}`;
     }

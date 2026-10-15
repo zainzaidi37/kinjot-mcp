@@ -22,7 +22,7 @@ import {
 } from './runtime.js';
 
 /**
- * The §5.3 handshake, from the CLI's side.
+ * The plans/desktop-app.md §5.3 handshake, from the CLI's side.
  *
  * Fixture libraries are built **by the test**, never by product code: §5.3
  * forbids the CLI from creating a database, so the only way to exercise the

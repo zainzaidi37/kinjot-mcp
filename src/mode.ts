@@ -23,7 +23,7 @@ export type ModeReason =
   | 'stored' // 2: `kinjot use`
   | 'sole-local' // 3: a pointer and no key
   | 'sole-account' // 3: a key and no pointer
-  | 'default-account'; // neither: today's behaviour, and today's error message
+  | 'default-account'; // neither: account setup reports the missing key
 
 export interface ModeResolution {
   readonly mode: KinjotMode;
@@ -109,11 +109,9 @@ export function resolveMode(env: Record<string, string | undefined> = process.en
     };
   }
 
-  // Row 4. Armed for every desktop user who has ever stored a key: the app
-  // publishes the pointer on every launch, whichever workspace mounts (PR A).
-  // That is the designed behaviour, not a regression — and the entire
-  // justification for a hard error is that it is actionable, so both commands
-  // are named.
+  // The app publishes the pointer on every launch, whichever workspace mounts.
+  // A machine with a key and pointer needs an explicit mode; name both commands
+  // so the refusal tells the user how to choose.
   if (localAvailable && accountAvailable) {
     throw new ModeError(
       `both a local library and an API key are set up on this machine, and no mode has been ` +
@@ -142,8 +140,8 @@ export function resolveMode(env: Record<string, string | undefined> = process.en
     };
   }
 
-  // Neither: stay on the account path so the existing "No API key found. Run
-  // `kinjot key`" message is what a first-run user meets, unchanged.
+  // With neither option available, use the account path so a first-run user
+  // gets the "No API key found. Run `kinjot key`" setup message.
   return {
     ...base,
     mode: 'account',

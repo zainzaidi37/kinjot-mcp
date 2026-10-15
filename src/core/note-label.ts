@@ -6,8 +6,9 @@
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 
-// D17: a label is at most four characters (A10..Z999), and a note numbered past
-// the cap has no label. With the prefix floor at 8, a 3- or 4-character id is a
+// A label is at most four characters (A10..Z999)
+// (`plans/agent-edits-and-short-ids-2026-09-23.md` D17), and a note numbered past the
+// cap has no label. With the prefix floor at 8, a 3- or 4-character id is a
 // label or invalid, 5 to 7 characters are invalid, and 8 or more is a prefix or
 // a UUID, so a label can never shadow a prefix.
 export const NOTE_LABEL_MAX_CHARS = 4;

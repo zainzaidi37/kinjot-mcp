@@ -87,14 +87,14 @@ describe('upload-image CLI contract', () => {
     expect(calls).toEqual([]);
   });
 
-  // C7: a second positional argument is a usage error with exit status 2.
+  // A second positional argument is a usage error with exit status 2.
   it('rejects a second upload-image path', async () => {
     await main(['upload-image', file, 'other.png']);
     expect(process.exitCode).toBe(2);
     expect(calls).toEqual([]);
   });
 
-  // C6: the stderr audit line strips C0 controls from a real image path.
+  // The stderr audit line strips C0 controls from a real image path.
   it('sanitizes a controlled filename in the audit line', async () => {
     const controlled = join(dir, 'shot\x1b[31m\x07.png');
     writeFileSync(controlled, png(2, 3));
@@ -105,7 +105,7 @@ describe('upload-image CLI contract', () => {
     expect(process.exitCode).toBe(undefined);
   });
 
-  // I9: CLI paths remain relative to its working directory.
+  // CLI paths remain relative to its working directory.
   it('resolves a relative image path for the CLI', async () => {
     const cwd = process.cwd();
     try {

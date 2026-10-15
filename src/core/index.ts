@@ -7,10 +7,8 @@
 import { z } from 'zod';
 import { NOTE_LABEL_PATTERN } from './note-label.js';
 
-// Canonical data model. Mirrors the Postgres schema exactly (see
-// docs/technical-plan.md, Phase 0). Timestamps are ISO-8601 strings as
-// returned by Postgres timestamptz columns; `updated_at` is always set
-// server-side (Postgres trigger in Phase 2+).
+// Canonical data model. Postgres timestamps are ISO-8601 strings; `updated_at`
+// on server rows is set by a Postgres trigger (CLAUDE.md).
 
 export const NOTE_SOURCES = ['web', 'mcp', 'cli', 'vscode'] as const;
 
@@ -39,7 +37,7 @@ const codePointLength = (minimum: number, maximum: number) =>
  *
  * Nullable, and required rather than optional, in the *local* schemas: null
  * means "no server revision yet". A row that has never been synced has no
- * transaction id to carry, and Phase 4 reads null as "must not exist on the
+ * transaction id to carry, and the flusher reads null as "must not exist on the
  * server". Optional would add an `undefined` third state that means the same
  * thing, so the type is `number | null` and every construction site must say
  * which it is. Rows read back from the server always carry one — see the
@@ -244,13 +242,11 @@ export type ApiKeyPublic = z.infer<typeof ApiKeyPublicSchema>;
 //
 // THIS declaration is the source. The web app (generation) imports it, but the
 // other two runtimes cannot and hold hand-written copies instead: the Edge
-// Function's `KEY_PATTERN` (supabase/functions/mcp-api/index.ts — the
-// Deno/npm boundary) and the CLI's (packages/mcp/src/config.ts — loading the
-// vendored core would drag zod into every MCP server start). Both copies are
-// pinned back to this one by `.source` equality:
-// supabase/tests/core-mirror.unit.test.ts and packages/mcp/src/index.test.ts.
-// The comment here used to claim the constant was simply "shared", which it
-// has never been.
+// Function's `KEY_PATTERN` (supabase/functions/mcp-api/index.ts — the Deno/npm
+// boundary) and the CLI's (packages/mcp/src/config.ts — loading the vendored
+// core would drag zod into every MCP server start). Both copies are pinned back
+// to this one by `.source` equality: supabase/tests/core-mirror.unit.test.ts
+// and packages/mcp/src/index.test.ts.
 export const API_KEY_PATTERN = /^kj_live_[A-Za-z0-9]{43}$/;
 export const API_KEY_PREFIX_LENGTH = 16;
 
@@ -290,9 +286,8 @@ export const ProfileSchema = z.object({
   /** Provider event timestamp that last set plan (out-of-order guard). */
   plan_event_at: timestamptz.nullable(),
   /**
-   * Version recording (on by default for accounts created since 2026-09-28).
-   * The one profiles column
-   * clients may write — a column-level grant scoped to their own row; the
+   * Version recording defaults on for new accounts. Clients may write this
+   * preference through a column-level grant scoped to their own row; the
    * capture trigger reads it server-side, so it gates web and MCP edits alike.
    */
   version_history_enabled: z.boolean(),
@@ -315,10 +310,10 @@ export const ProfileSchema = z.object({
 export type Profile = z.infer<typeof ProfileSchema>;
 export type Plan = Profile['plan'];
 
-// Phase 4 AI recall. These tables are server-managed: only Edge Functions
-// (service role) write them; clients at most read their own rows. The
-// schemas mirror the SQL exactly — `embedding` is pgvector vector(1024)
-// serialized as a JSON number array at the PostgREST boundary.
+// AI recall. These tables are server-managed: only Edge Functions (service
+// role) write them; clients at most read their own rows. The schemas mirror the
+// SQL exactly — `embedding` is pgvector vector(1024) serialized as a JSON
+// number array at the PostgREST boundary.
 export const EMBEDDING_DIM = 1024;
 
 // No deleted_at on either derived table: embeddings and queue rows are
@@ -382,8 +377,8 @@ export const EmbeddingJobSchema = z.object({
 });
 export type EmbeddingJob = z.infer<typeof EmbeddingJobSchema>;
 
-// Phase 5 Tidiness. Run and change rows are user content fetched on demand;
-// tidy_jobs is rebuildable server-only queue state.
+// Tidiness. Run and change rows are user content fetched on demand; tidy_jobs
+// is rebuildable server-only queue state.
 export const TIDY_TRIGGERS = ['manual', 'capture', 'prompted'] as const;
 export const TIDY_RUN_STATUSES = [
   'running',
@@ -541,10 +536,8 @@ export const MAX_TIDY_CLARIFY_QUESTIONS = 3;
 /**
  * The one questions-array shape, shared by every boundary that parses a
  * clarification round: this schema, the `pending_clarify` stream event, and the
- * client's recovery read of a stored pause. They used to state three different
- * rules (min 1 / max 3 here, no bounds at all on the wire, min 1 and no maximum
- * on recovery), which is drift waiting to happen — one exported schema means
- * they cannot disagree again.
+ * client's recovery read of a stored pause. Sharing the schema keeps their
+ * question-count bounds in step.
  *
  * Question ids name the radio groups and index the selection map in
  * `TidyClarifyCard.tsx`; duplicates would make two questions share one answer.
@@ -651,8 +644,9 @@ const TidyRetagNotePayloadSchema = z.object({
       /**
        * The link's `sync_seq` as this run left it. The undo fences its delete
        * on it, so a link the user removed and re-added is not deleted again
-       * (audit finding F6). Optional because every entry logged before the
-       * fence shipped carries no value, and those keep the older behaviour.
+       * (`plans/sync-audit-2026-09-09.md` F6).
+       * Optional because every entry logged before the fence shipped carries no
+       * value, and those keep the older behaviour.
        */
       sync_seq: z.number().int().optional(),
     }),
@@ -865,32 +859,28 @@ export const TidyStreamEventSchema = z.discriminatedUnion('event', [
     event: z.literal('progress'),
     data: z.object({
       /**
-       * Widened to an open string. The trap this retires: a *narrower* type
-       * here (an enum over the two values the server emits today) would throw
-       * on a third value a future function adds, and `parseTidyStreamEvent`'s
-       * `.parse` throwing turns a live, still-applying run (`EdgeRuntime.
-       * waitUntil`, §0) into "Tidiness failed — malformed stream data." on any
-       * bundle cached before that deploy. The server itself still emits only
-       * `'planning'` and `'applying'` — enforced by a narrow helper
-       * server-side (`tidy-notes/stream.ts`'s `TidyStreamContext.progress`) —
-       * until the 2026 stale bundles have aged out; widening here just means a
-       * value it *does* send one day parses instead of crashing every browser
-       * that hasn't refreshed. See the forward-compat test in index.test.ts.
+       * Open string so a newer function's stage does not fail parsing in an
+       * older bundle (`plans/tidy-transparency.md` §0). An enum would turn a
+       * live, still-applying run into "malformed stream data" when
+       * `parseTidyStreamEvent` throws. The server's
+       * `TidyStreamContext.progress` in `supabase/functions/tidy-notes/stream.ts`
+       * emits `'planning'` and `'applying'` (index.test.ts's forward-compat test).
        */
       stage: z.string(),
       done: z.number().int().nonnegative(),
       total: z.number().int().nonnegative(),
       /**
        * Which of the three planning/apply sub-steps this event reports on:
-       * `'taxonomy'`, `'assignments'`, or `'applying'`. Optional and open, following the
-       * `error` event's `code` field below in this same union (deliberately
-       * not an enum, for the same non-atomic-deploy reason) — an older function never
-       * sends it, and a newer one may send a phase this bundle has never heard
-       * of. `stage` keeps its old two-value meaning forever: `'taxonomy'` and
-       * `'assignments'` both ride `stage: 'planning'`, so a client that has
-       * never heard of `phase` still shows the right word, just not the finer
-       * one. The client prefers `phase` when it recognizes it and falls back
-       * to `stage` otherwise (`tidyProgressLabel`, `apps/web/.../TidyModal.tsx`).
+       * `'taxonomy'`, `'assignments'`, or `'applying'`. Optional and open,
+       * following the `error` event's `code` field below in this same union
+       * (deliberately not an enum, for the same non-atomic-deploy reason) — an
+       * older function never sends it, and a newer one may send a phase this
+       * bundle has never heard of. `stage` retains its two-value mapping:
+       * `'taxonomy'` and `'assignments'` both ride `stage: 'planning'`, so a
+       * client that has never heard of `phase` still shows the right word, just
+       * not the finer one. The client prefers `phase` when it recognizes it and
+       * falls back to `stage` otherwise (`tidyProgressLabel`,
+       * `apps/web/src/components/TidyPresentation.tsx`).
        */
       phase: z.string().optional(),
     }),
@@ -903,26 +893,27 @@ export const TidyStreamEventSchema = z.discriminatedUnion('event', [
       skipped: z.number().int().nonnegative(),
       change_counts: z.record(z.string(), z.number().int().nonnegative()).optional(),
       /**
-       * Present only when the applied plan was empty (plans/tidy-transparency.md
-       * §3) — that is the only time a caller needs to say more than `applied`/
-       * `skipped` already do. `reasons` is the honest two-way split the server
-       * can actually derive, since it holds ops, not interpretation:
-       * `reasons: {}` means the planner proposed nothing at all; a non-empty
-       * record means it proposed ops and validation (`TidyDropTally` in
-       * tidy-plan.ts) dropped every one, with per-reason-code counts.
+       * Present only when the applied plan was empty
+       * (plans/tidy-transparency.md §3) — that is the only time a caller needs
+       * to say more than `applied`/ `skipped` already do. `reasons` is the
+       * honest two-way split the server can actually derive, since it holds
+       * ops, not interpretation: `reasons: {}` means the planner proposed
+       * nothing at all; a non-empty record means it proposed ops and validation
+       * (`TidyDropTally` in tidy-plan.ts) dropped every one, with
+       * per-reason-code counts.
        *
        * Deliberately not a field on `taxonomySchema`/`assignmentSchema`: under
-       * `strict: true` every declared property there is required, so a
-       * `reason` field would be one the model has to fill on *every* call —
-       * precisely how the taxonomy call talked itself into the `refusal` veto
-       * that 8b77267 removed. Diagnostics are derived server-side from the
-       * tally, never planner-authored.
+       * `strict: true` every declared property there is required, so a `reason`
+       * field would be one the model has to fill on *every* call — requiring
+       * model-authored diagnostics can invite a refusal instead of operations.
+       * Diagnostics are derived server-side from the tally, never
+       * planner-authored.
        *
        * `reasons` is open-keyed (`z.record`), following `error.code`'s and
-       * `phase`'s precedent above: a reason code this bundle has never heard
-       * of parses instead of throwing. No model-authored text crosses the
-       * wire here — only counts and closed-set reason codes — and no
-       * redundant total the client could just sum itself.
+       * `phase`'s precedent above: a reason code this bundle has never heard of
+       * parses instead of throwing. No model-authored text crosses the wire
+       * here — only counts and closed-set reason codes — and no redundant total
+       * the client could just sum itself.
        */
       diagnostics: z
         .object({ reasons: z.record(z.string(), z.number().int().nonnegative()) })
@@ -953,9 +944,9 @@ export const TidyStreamEventSchema = z.discriminatedUnion('event', [
      * an older function omits `code` entirely, and a newer one may send a code
      * this bundle has never heard of. An enum would reject the second and the
      * client would replace a real error with "malformed stream data" — which is
-     * exactly the stale-bundle hazard this arc has been careful about. Meaning
-     * is assigned at the point of use, by comparing against
-     * `TIDY_REFUSED_CODE`; anything else is a plain failure.
+     * the stale-bundle hazard this schema must avoid. Meaning is assigned at
+     * the point of use, by comparing against `TIDY_REFUSED_CODE`; anything else
+     * is a plain failure.
      */
     data: z.object({ message: z.string(), code: z.string().optional() }),
   }),
@@ -1036,14 +1027,14 @@ export type RecallPeriodUsage = z.infer<typeof RecallPeriodUsageSchema>;
 
 /**
  * One dictation engine's price, as the server publishes it
- * (`plans/voice-to-text.md` §2b, verified 2026-09-19). Mirrors
+ * (`plans/voice-to-text.md` §2b). Mirrors
  * `supabase/functions/_shared/voice-credits.ts`, which is the server's copy,
  * and `apps/web/src/lib/voice/credits.ts`, which is the client's fallback.
  *
- * `model` is deliberately a plain string rather than an enum: the rate table
- * is *data* the server owns, and a client that rejected a row naming an
- * engine it had not heard of would fail the whole response the first time a
- * newer backend added one.
+ * `model` is deliberately a plain string rather than an enum: the rate table is
+ * *data* the server owns, and a client that rejected a row naming an engine it
+ * had not heard of would fail the whole response the first time a newer backend
+ * added one.
  */
 export const VoiceCreditRateSchema = z.object({
   model: z.string().min(1),
@@ -1058,13 +1049,12 @@ export type VoiceCreditRate = z.infer<typeof VoiceCreditRateSchema>;
  * unrelated to the caller's quota window (which comes from
  * {@link RecallPeriodUsageSchema}) and is retained only for older clients.
  *
- * A `null` limit means **uncapped** (WP-H of
- * `plans/byo-selfhost-distribution.md`). A self-hosted deployment's operator
- * pays their own provider bills, so `RECALL_MONTHLY_LIMIT=unlimited` switches
- * the ceiling off — and the wire form has to be a shape the Usage view can
- * render as "no limit" rather than as the int4 the quota RPC receives. Hosted
- * never sends it: `_shared/limits.ts` reaches uncapped only through that one
- * word, which no numeric misconfiguration can spell.
+ * A `null` limit means **uncapped**. A self-hosted deployment's operator pays
+ * their own provider bills, so `RECALL_MONTHLY_LIMIT=unlimited` switches the
+ * ceiling off — and the wire form has to be a shape the Usage view can render
+ * as "no limit" rather than as the int4 the quota RPC receives. Hosted never
+ * sends it: `_shared/limits.ts` reaches uncapped only through that one word,
+ * which no numeric misconfiguration can spell.
  */
 export const UsageLimitsSchema = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/),
@@ -1249,9 +1239,9 @@ export const RecallStreamEventSchema = z.discriminatedUnion('event', [
      * an older function omits `code` entirely, and a newer one may send a code
      * this bundle has never heard of. An enum would reject the second and the
      * client would replace a real error with "malformed stream data" — which is
-     * exactly the stale-bundle hazard this arc has been careful about. Meaning
-     * is assigned at the point of use, by comparing against
-     * `provider_declined`; anything else is a plain failure.
+     * the stale-bundle hazard this schema must avoid. Meaning is assigned at
+     * the point of use, by comparing against `provider_declined`; anything else
+     * is a plain failure.
      */
     data: z.object({ message: z.string(), code: z.string().optional() }),
   }),
@@ -1266,17 +1256,13 @@ export function parseRecallStreamEvent(event: string, data: unknown): RecallStre
   return RecallStreamEventSchema.parse({ event, data });
 }
 
-// The billing-links Edge Function's response shape. Checkouts are only
-// minted for users who can use them (null for pro); portal URLs are
-// pre-signed and short-lived — fetched on click, never cached.
+// The billing-links Edge Function's response shape. Checkouts are only minted
+// for users who can use them (null for pro); portal URLs are pre-signed and
+// short-lived — fetched on click, never cached.
 //
-// `plan` was always in the function's body and was dropped here until the
-// standalone `/upgrade` route needed it (`plans/checkout-flow.md` WP2). It is
-// the difference between "no checkout was minted" and "no checkout was minted
-// *because you already subscribed*", and inferring that from two nulls is
-// wrong in exactly the case that matters: a pro row whose `billing_ref` is
-// missing answers null to both, and reading that as an error tells a paying
-// user their checkout is broken.
+// `plan` explains why no checkout was minted. A pro row with no `billing_ref`
+// returns null for both URLs, so inferring the plan from those nulls would
+// report a broken checkout to a paying user.
 export const BillingLinksSchema = z.object({
   plan: z.enum(PLANS),
   checkoutUrl: z.string().url().nullable(),
@@ -1292,21 +1278,20 @@ export const DeletedAccountResponseSchema = z.object({ deleted: z.literal(true) 
 
 // The `kinjot_schema_compatibility()` RPC's response: one integer naming the
 // sync-protocol epoch the connected database's schema speaks (migration
-// 20260924062132, the kinjot-named twin of 20260910033812). WP3 of
-// `plans/byo-supabase-implementation.md`.
+// 20260924062132).
 //
-// Strict on purpose. A database whose answer the client cannot recognize is
-// not a database it should sync against: a float, a string, a negative number
-// and a null must all land in the same unsupported bucket, and the client must
-// never coerce its way to a number it can compare.
+// A database whose answer the client cannot recognize must not be synced: a
+// float, string, negative number or null must land in the unsupported bucket.
+// The client must never coerce its way to a number it can compare.
 export const SchemaCompatibilityEpochSchema = z.number().int().positive();
 export type SchemaCompatibilityEpoch = z.infer<typeof SchemaCompatibilityEpochSchema>;
 
-// Note version history. Every content edit snapshots the note's *previous*
-// title/body here (Postgres trigger). Rows are user content — soft-deletable
-// and purged on account deletion — but immutable in practice: clients get
-// SELECT only, and reads are Pro-gated by RLS. Not sync-pulled; fetched on
-// demand, so there is no Dexie table for them.
+// Server note version history. Content edits snapshot the previous title/body
+// when version recording is enabled; agent edits also snapshot unless an
+// authorized append opts out (CLAUDE.md). Rows are user content, soft-deletable
+// and purged on account deletion. Clients get SELECT only, Pro-gated by RLS.
+// Server history is fetched on demand rather than sync-pulled; local mode
+// stores its own history separately.
 export const NoteVersionSchema = z.object({
   id: uuid,
   note_id: uuid,
@@ -1333,8 +1318,8 @@ export const NoteVersionAttributionSchema = NoteVersionMetaSchema.extend({
 });
 export type NoteVersionAttribution = z.infer<typeof NoteVersionAttributionSchema>;
 
-// Join rows carry the full audit column set: the sync cursor pulls each table
-// by (user_id, updated_at), and removals are soft-deletes like everywhere else.
+// Join rows carry the full audit column set. The sync cursor pulls each table
+// by user_id and sync_seq (CLAUDE.md); removals are soft-deletes.
 export const NoteTagSchema = z.object({
   note_id: uuid,
   tag_id: uuid,
@@ -1642,12 +1627,12 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
  * exactly as the row schemas above mirror their tables, and they are pinned to
  * that file by `supabase/tests/attachments-contract.unit.test.ts`. They live in
  * core rather than in the SPA because the same constants describe the Supabase
- * backend and the later R2 one, and because a self-hosted operator's client and
- * their database must agree on them.
+ * backend and the R2 one, and because a self-hosted operator's client and their
+ * database must agree on them.
  *
  * There is deliberately no attachment *row* schema: the object key is minted at
- * upload time and the public URL lives in the note body, so nothing about an
- * attachment is synced, exported as a manifest row, or held in the outbox.
+ * upload time and the public URL travels with the synced and exported note
+ * body. The object has no separate manifest row or outbox entry.
  */
 export const ATTACHMENT_BUCKET = 'note-attachments';
 
@@ -1719,8 +1704,9 @@ export const ATTACHMENT_UPLOAD_HEADER_NAMES = ['content-type', 'cache-control'] 
 /**
  * Per-user ceilings, checked before an upload against `attachment_usage()`.
  *
- * On the Supabase backend these are **advisory** (plan D9): the browser uploads
- * directly under RLS, so a session-JWT holder can PUT past them, and it is the
+ * On the Supabase backend these are **advisory**
+ * (`plans/image-attachments-2026-09-20.md` D9): the browser uploads directly
+ * under RLS, so a session-JWT holder can PUT past them, and it is the
  * operator's own project and bill. On the hosted R2 backend the equivalent
  * check happens inside the grant function, where it is real.
  *
@@ -1728,8 +1714,8 @@ export const ATTACHMENT_UPLOAD_HEADER_NAMES = ['content-type', 'cache-control'] 
  * millions of tiny objects, which costs per-write charges and would make any
  * bounded listing of a prefix incomplete. `attachment_usage()` stops scanning
  * at `ATTACHMENT_OBJECT_COUNT_LIMIT + 1` rows for that reason and reports
- * `truncated`, which a caller must treat as over-quota rather than as a
- * prompt to scan further.
+ * `truncated`, which a caller must treat as over-quota rather than as a prompt
+ * to scan further.
  */
 export const ATTACHMENT_TOTAL_BYTES_LIMIT = 1024 * 1024 * 1024;
 export const ATTACHMENT_OBJECT_COUNT_LIMIT = 2000;
@@ -1738,12 +1724,13 @@ export const ATTACHMENT_OBJECT_COUNT_LIMIT = 2000;
  * The **hosted** byte ceiling, which is deliberately a different number from
  * the one above rather than a raise of it.
  *
- * `ATTACHMENT_TOTAL_BYTES_LIMIT` is the Supabase-backend ceiling: advisory on
- * a BYO project (D9), in the operator's own bucket and on their own bill, and
- * pinned to the SQL contract by `attachments-contract.unit.test.ts`. Hosted's
- * bytes are in R2 instead, where `attachment-grant` is the only source of an
- * upload URL and the ceiling is therefore real and ours to set. Zain set it at
- * 2 GiB (`plans/image-management-2026-09-22.md` §1).
+ * `ATTACHMENT_TOTAL_BYTES_LIMIT` is the Supabase-backend ceiling: advisory on a
+ * BYO project, in the operator's own bucket and on their own bill
+ * (`plans/image-attachments-2026-09-20.md` D9), and pinned
+ * to the SQL contract by `attachments-contract.unit.test.ts`. Hosted's bytes
+ * are in R2 instead, where `attachment-grant` is the only source of an upload
+ * URL and the ceiling is enforced there: 2 GiB
+ * (`plans/image-management-2026-09-22.md` §1).
  *
  * Raising the shared constant instead would also raise what a BYO operator's
  * client advertises and pre-checks against, in a project this repository does
@@ -1815,9 +1802,9 @@ export * from './sqlite-ddl.js';
  * ported from `mcp_save_note` and pinned to it by a conformance suite.
  *
  * Deliberately barrel-reachable: the barrel's closure is exactly what the
- * vendoring generator (§4.5) copies into `packages/mcp/src/core`, and WP6's
- * local-library CLI is the reason this module exists. Dependency-free, so it
- * drags nothing into either consumer.
+ * vendoring generator (`plans/desktop-app.md` §4.5) copies into
+ * `packages/mcp/src/core` for the
+ * local-library CLI. Dependency-free, so it drags nothing into either consumer.
  */
 export * from './save-note.js';
 
@@ -1834,9 +1821,8 @@ export * from './save-note.js';
  * body with it, and every other wire schema the SPA validates lives here. The
  * cost of that placement is that the vendoring generator above copies it into
  * `packages/mcp/src/core` as well, where nothing uses it: the closure rule is
- * deliberately mechanical, and a second fence for one module would be a worse
- * trade than a few hundred unused lines in a package that already ships the
- * whole row model.
+ * mechanical. Excluding this module would add a second fence to maintain;
+ * keeping it adds unused code to a package that already ships the row model.
  */
 export * from './admin-analytics.js';
 
@@ -1893,7 +1879,10 @@ export interface AiSafetyRpc {
 
 /** The 100k-character cap on an agent edit's strings and on a chat proposal's text. */
 export const AGENT_EDIT_MAX_CHARS = 100_000;
-/** A note reference of at least this many hex characters is an id prefix (D17). */
+/**
+ * A note reference of at least this many hex characters is an id prefix
+ * (`plans/agent-edits-and-short-ids-2026-09-23.md` D10).
+ */
 export const NOTE_ID_PREFIX_MIN_CHARS = 8;
 /** Proposal cards one chat turn may show; extra proposals are refused to the model. */
 export const CHAT_MAX_PROPOSALS_PER_TURN = 3;
