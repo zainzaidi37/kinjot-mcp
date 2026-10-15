@@ -34,6 +34,9 @@ import {
 
 const WORKSPACE = FIXTURE_WORKSPACE;
 const makeLibrary = makeLibraryFixture;
+// The lock-contention tests below fork a holder and can wait out the 5 s busy
+// bound, so each keeps its own 30 s limit: the public kinjot-mcp mirror runs
+// src/ without this package's vitest.config.ts (#1121).
 
 function pragma(db: SqliteDatabase, name: string): unknown {
   return Object.values(db.prepare(`PRAGMA ${name}`).get() ?? {})[0];
@@ -193,7 +196,7 @@ describe('the pointer handshake', () => {
     } finally {
       holder.kill();
     }
-  }, 15_000);
+  }, 30_000);
 
   it('refuses contention longer than its bound, names the lock, and writes nothing', async () => {
     const fixture = makeLibrary(dir);
@@ -220,7 +223,7 @@ describe('the pointer handshake', () => {
     } finally {
       holder.kill();
     }
-  }, 20_000);
+  }, 30_000);
 
   it('refuses a database that is not a Kinjot library at all', () => {
     mkdirSync(join(dir, 'local'), { recursive: true });

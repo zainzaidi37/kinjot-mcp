@@ -17,6 +17,9 @@ import { applySaveNotePlan, saveNoteLocally } from './save-note.js';
  */
 
 const WORKSPACE = FIXTURE_WORKSPACE;
+// The lock-contention tests below fork a holder and can wait out the 5 s busy
+// bound, so each keeps its own 30 s limit: the public kinjot-mcp mirror runs
+// src/ without this package's vitest.config.ts (#1121).
 
 function rows(library: LocalLibrary, table: string): Record<string, unknown>[] {
   // rowid, so insertion order is what is compared (note_tags has no `id`).
@@ -54,7 +57,7 @@ describe('saveNoteLocally', () => {
     } finally {
       holder.kill();
     }
-  }, 15_000);
+  }, 30_000);
 
   it('refuses a writer that outlives the bound as contention, with nothing written', async () => {
     const holder = await holdLocked(library.path, { mode: 'write' });
@@ -79,7 +82,7 @@ describe('saveNoteLocally', () => {
     } finally {
       holder.kill();
     }
-  }, 20_000);
+  }, 30_000);
 
   it('writes the note, its folder and its tags, all owned by the library workspace', () => {
     const saved = saveNoteLocally(library, {
