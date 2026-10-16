@@ -1624,8 +1624,7 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
  * Image attachments (plans/image-attachments-2026-09-20.md §3.1–§3.2, §4.3).
  *
  * These mirror a SQL contract — `20260920115518_note_attachments_bucket.sql` —
- * exactly as the row schemas above mirror their tables, and they are pinned to
- * that file by `supabase/tests/attachments-contract.unit.test.ts`. They live in
+ * exactly as the row schemas above mirror their tables. They live in
  * core rather than in the SPA because the same constants describe the Supabase
  * backend and the R2 one, and because a self-hosted operator's client and their
  * database must agree on them.
@@ -1693,8 +1692,8 @@ export const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
  * The only header names an agent upload grant may tell a client to send with
  * its PUT; the `upload_image` client refuses a grant that names any other. It is
  * a credential boundary: on Supabase Storage the server's own client headers
- * carry the service-role key. The response's header names are pinned to this
- * list by `mcp-api-image-upload.unit.test.ts`, never projected from a client.
+ * carry the service-role key. The hosted grant's header names are pinned to
+ * this list by `mcp-api-image-upload.unit.test.ts`, never projected from a client.
  * The reasoning and the measurement behind leaving `x-upsert` out are in
  * `supabase/functions/_shared/attachments.ts`,
  * whose copy `attachments-contract.unit.test.ts` pins equal to this one.
@@ -1726,8 +1725,8 @@ export const ATTACHMENT_OBJECT_COUNT_LIMIT = 2000;
  *
  * `ATTACHMENT_TOTAL_BYTES_LIMIT` is the Supabase-backend ceiling: advisory on a
  * BYO project, in the operator's own bucket and on their own bill
- * (`plans/image-attachments-2026-09-20.md` D9), and pinned
- * to the SQL contract by `attachments-contract.unit.test.ts`. Hosted's bytes
+ * (`plans/image-attachments-2026-09-20.md` D9), and equal to the SQL contract.
+ * Hosted's bytes
  * are in R2 instead, where `attachment-grant` is the only source of an upload
  * URL and the ceiling is enforced there: 2 GiB
  * (`plans/image-management-2026-09-22.md` §1).
