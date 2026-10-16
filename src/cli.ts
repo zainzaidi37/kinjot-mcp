@@ -487,19 +487,10 @@ export async function runInitSelfHost(deps: RunSelfHostDeps = {}): Promise<void>
       'warning: KINJOT_API_KEY or KINJOT_API_URL is set in your environment; environment values override the saved self-host configuration.\n',
     );
   }
-  stdout.write('With the Claude Code CLI:\n\n');
   stdout.write(
-    `claude mcp add kinjot -e KINJOT_API_KEY=${key} -e KINJOT_API_URL=${shellQuote(apiUrl)} -- npx -y kinjot\n`,
+    'The key is saved on this machine and the MCP server reads it here; for a client on another machine, run npx kinjot init-selfhost there.\n\n',
   );
-  stdout.write('\nWith the Codex CLI:\n\n');
-  stdout.write(
-    `codex mcp add kinjot --env KINJOT_API_KEY=${key} --env KINJOT_API_URL=${shellQuote(apiUrl)} -- npx -y kinjot\n`,
-  );
-  stdout.write("\nOr add this to any other MCP client's JSON config (such as .mcp.json):\n\n");
-  const envBlock = { KINJOT_API_KEY: key, KINJOT_API_URL: apiUrl };
-  stdout.write(
-    `${JSON.stringify({ mcpServers: { kinjot: { command: 'npx', args: ['-y', 'kinjot'], env: envBlock } } }, null, 2)}\n`,
-  );
+  printStoredMcpSetup(stdout, { apiUrl, configDir: env.KINJOT_CONFIG_DIR?.trim() || undefined });
 }
 
 /**
@@ -603,6 +594,40 @@ export interface RunKeyDeps {
   stderr?: { write: (chunk: string) => unknown };
 }
 
+/**
+ * The MCP client setup for an account saved on this machine: none of it carries
+ * the key, because the server reads the saved account. The server finds it
+ * through `configDir()`, so a `KINJOT_CONFIG_DIR` that moved the saved account
+ * has to travel with the command, or the server would read `~/.kinjot` instead.
+ */
+export function storedMcpSetupText(setup: { apiUrl?: string; configDir?: string }): string {
+  const vars: Array<[string, string]> = [];
+  if (setup.apiUrl !== undefined) vars.push(['KINJOT_API_URL', setup.apiUrl]);
+  if (setup.configDir !== undefined) vars.push(['KINJOT_CONFIG_DIR', setup.configDir]);
+  const claudeEnv = vars.map(([name, value]) => ` -e ${name}=${shellQuote(value)}`).join('');
+  const codexEnv = vars.map(([name, value]) => ` --env ${name}=${shellQuote(value)}`).join('');
+  const server = {
+    command: 'npx',
+    args: ['-y', 'kinjot'],
+    ...(vars.length > 0 ? { env: Object.fromEntries(vars) } : {}),
+  };
+  return [
+    'With the Claude Code CLI:\n\n',
+    `claude mcp add kinjot${claudeEnv} -- npx -y kinjot\n`,
+    '\nWith the Codex CLI:\n\n',
+    `codex mcp add kinjot${codexEnv} -- npx -y kinjot\n`,
+    "\nOr add this to any other MCP client's JSON config (such as .mcp.json):\n\n",
+    `${JSON.stringify({ mcpServers: { kinjot: server } }, null, 2)}\n`,
+  ].join('');
+}
+
+function printStoredMcpSetup(
+  stdout: { write: (chunk: string) => unknown },
+  setup: { apiUrl?: string; configDir?: string },
+): void {
+  stdout.write(storedMcpSetupText(setup));
+}
+
 export async function runKey(deps: RunKeyDeps = {}): Promise<void> {
   const env = deps.env ?? process.env;
   const stdout = deps.stdout ?? process.stdout;
@@ -650,18 +675,7 @@ export async function runKey(deps: RunKeyDeps = {}): Promise<void> {
       ? 'Saved — Kinjot will use this key automatically from now on, no env var needed.\n\n'
       : 'Saved — Kinjot will use this key and custom endpoint automatically.\n\n',
   );
-  const claudeApiUrl = apiUrl === DEFAULT_API_URL ? '' : ` -e KINJOT_API_URL=${shellQuote(apiUrl)}`;
-  const codexApiUrl =
-    apiUrl === DEFAULT_API_URL ? '' : ` --env KINJOT_API_URL=${shellQuote(apiUrl)}`;
-  stdout.write('With the Claude Code CLI:\n\n');
-  stdout.write(`claude mcp add kinjot${claudeApiUrl} -- npx -y kinjot\n`);
-  stdout.write('\nWith the Codex CLI:\n\n');
-  stdout.write(`codex mcp add kinjot${codexApiUrl} -- npx -y kinjot\n`);
-  stdout.write("\nOr add this to any other MCP client's JSON config (such as .mcp.json):\n\n");
-  const envBlock = apiUrl === DEFAULT_API_URL ? undefined : { KINJOT_API_URL: apiUrl };
-  stdout.write(
-    `${JSON.stringify({ mcpServers: { kinjot: { command: 'npx', args: ['-y', 'kinjot'], ...(envBlock ? { env: envBlock } : {}) } } }, null, 2)}\n`,
-  );
+  printStoredMcpSetup(stdout, { apiUrl: apiUrl === DEFAULT_API_URL ? undefined : apiUrl });
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {

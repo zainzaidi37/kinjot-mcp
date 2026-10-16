@@ -3,8 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { configFilePath } from './configFile.js';
-import { runInitSelfHost, runWhere, selfHostApiUrl } from './cli.js';
+import { resolveConfig } from './config.js';
+import { configDir, configFilePath, loadStoredConfig } from './configFile.js';
+import { runInitSelfHost, runWhere, selfHostApiUrl, storedMcpSetupText } from './cli.js';
 
 const GOOD_KEY = `kj_live_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V'.slice(0, 43)}`;
 const REF = 'abcdefghijklmnopqrst';
@@ -42,6 +43,31 @@ describe('selfHostApiUrl', () => {
   });
 });
 
+describe('storedMcpSetupText', () => {
+  const url = 'https://abcdefghijklmnopqrst.supabase.co/functions/v1/mcp-api';
+
+  it('is a bare command with no env when nothing needs to travel', () => {
+    const text = storedMcpSetupText({});
+    expect(text).toContain('claude mcp add kinjot -- npx -y kinjot\n');
+    expect(text).toContain('codex mcp add kinjot -- npx -y kinjot\n');
+    expect(JSON.parse(text.slice(text.indexOf('{')))).toEqual({
+      mcpServers: { kinjot: { command: 'npx', args: ['-y', 'kinjot'] } },
+    });
+  });
+
+  it('carries the endpoint, the config directory, or both, shell-quoted, and never a key', () => {
+    expect(storedMcpSetupText({ configDir: "/home/me/it's here" })).toContain(
+      `claude mcp add kinjot -e KINJOT_CONFIG_DIR='/home/me/it'"'"'s here' -- npx -y kinjot\n`,
+    );
+    const both = storedMcpSetupText({ apiUrl: url, configDir: '/srv/kinjot' });
+    expect(both).toContain(
+      `codex mcp add kinjot --env KINJOT_API_URL='${url}' --env KINJOT_CONFIG_DIR='/srv/kinjot' -- npx -y kinjot\n`,
+    );
+    expect(both).not.toContain('KINJOT_API_KEY');
+    expect(both).not.toContain('kj_live_');
+  });
+});
+
 describe('runInitSelfHost', () => {
   let dir: string;
 
@@ -74,14 +100,88 @@ describe('runInitSelfHost', () => {
       apiKey: GOOD_KEY,
       apiUrl,
     });
-    expect(stdout.all()).toContain(GOOD_KEY);
-    expect(stdout.all()).toContain(`"KINJOT_API_URL": "${apiUrl}"`);
-    expect(stdout.all()).toContain('mcpServers');
     expect(stdout.all()).toContain(
       'API key access: Read only — can read notes; cannot create or edit.',
     );
-    expect(stdout.all()).toContain(`claude mcp add kinjot -e KINJOT_API_KEY=${GOOD_KEY}`);
-    expect(stdout.all()).toContain(`codex mcp add kinjot --env KINJOT_API_KEY=${GOOD_KEY}`);
+  });
+
+  it('prints key-free MCP commands and JSON for the saved endpoint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string | URL | Request, init: RequestInit) => response(init)),
+    );
+    const stdout = capture();
+    await runInitSelfHost({
+      env: { KINJOT_CONFIG_DIR: dir },
+      readProject: async () => REF,
+      readHidden: async () => GOOD_KEY,
+      stdout,
+    });
+
+    const apiUrl = `https://${REF}.supabase.co/functions/v1/mcp-api`;
+    const output = stdout.all();
+    // The saved account lives in KINJOT_CONFIG_DIR here, so the server has to be told where.
+    expect(output.split('\n').filter((line) => /^(claude|codex) mcp add /.test(line))).toEqual([
+      `claude mcp add kinjot -e KINJOT_API_URL='${apiUrl}' -e KINJOT_CONFIG_DIR='${dir}' -- npx -y kinjot`,
+      `codex mcp add kinjot --env KINJOT_API_URL='${apiUrl}' --env KINJOT_CONFIG_DIR='${dir}' -- npx -y kinjot`,
+    ]);
+    expect(JSON.parse(output.slice(output.indexOf('{')))).toEqual({
+      mcpServers: {
+        kinjot: {
+          command: 'npx',
+          args: ['-y', 'kinjot'],
+          env: { KINJOT_API_URL: apiUrl, KINJOT_CONFIG_DIR: dir },
+        },
+      },
+    });
+    expect(output).not.toContain(GOOD_KEY);
+    expect(output).not.toContain('KINJOT_API_KEY');
+    expect(output).toContain(
+      'The key is saved on this machine and the MCP server reads it here; for a client on another machine, run npx kinjot init-selfhost there.\n',
+    );
+  });
+
+  it('prints a setup whose own env resolves back to the saved key and endpoint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string | URL | Request, init: RequestInit) => response(init)),
+    );
+    const stdout = capture();
+    await runInitSelfHost({
+      env: { KINJOT_CONFIG_DIR: dir },
+      readProject: async () => REF,
+      readHidden: async () => GOOD_KEY,
+      stdout,
+    });
+    const output = stdout.all();
+    const printed = JSON.parse(output.slice(output.indexOf('{'))).mcpServers.kinjot.env as Record<
+      string,
+      string
+    >;
+    // What an MCP client launches the server with: the printed env and nothing else.
+    expect(resolveConfig(printed, () => loadStoredConfig(configDir(printed)))).toEqual({
+      apiUrl: `https://${REF}.supabase.co/functions/v1/mcp-api`,
+      apiKey: GOOD_KEY,
+    });
+  });
+
+  it('keeps the environment-override warning without printing its key value', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string | URL | Request, init: RequestInit) => response(init)),
+    );
+    const stdout = capture();
+    const stderr = capture();
+    await runInitSelfHost({
+      env: { KINJOT_CONFIG_DIR: dir, KINJOT_API_KEY: GOOD_KEY },
+      readProject: async () => REF,
+      stdout,
+      stderr,
+    });
+    expect(stderr.all()).toBe(
+      'warning: KINJOT_API_KEY or KINJOT_API_URL is set in your environment; environment values override the saved self-host configuration.\n',
+    );
+    expect(stdout.all() + stderr.all()).not.toContain(GOOD_KEY);
   });
 
   it('accepts project and key in one ended piped chunk without losing the second line', async () => {
