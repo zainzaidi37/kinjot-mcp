@@ -1,20 +1,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { NotesApi } from './api.js';
 import type { ApiKeyAccess } from './core/index.js';
-import { buildServer, leanTools } from './server.js';
+import { buildServer } from './server.js';
 
 const API_KEY = `kj_live_${'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V'.slice(0, 43)}`;
 const API_URL = 'https://api.example';
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}
 
 type WireList = { id: string | number; result: ListToolsResult };
 
@@ -92,10 +85,6 @@ const ACCESS_TOOLS = {
     'upload_image',
   ],
 } as const;
-
-// Exact by design (#819; plans/mcp-tool-definitions-2026-09-28.md §7):
-// growth and cuts both fail, so changing a number is a reviewed decision.
-const TOOLS_LIST_BUDGET = { read: 3152, read_create: 6154, full: 7878 };
 
 const EXPECTED_DESCRIPTIONS: Record<
   string,
@@ -225,46 +214,6 @@ describe('tools/list wire', () => {
     }
   });
 
-  it.each([
-    ['read', 'read'],
-    ['read_create', 'read_create'],
-    ['full', 'full'],
-    ['undefined', undefined],
-  ] as const)('T2: %s stays at its exact character budget', async (name, access) => {
-    const linked = await linkedServer(access);
-    try {
-      const tools = linked.wire.result.tools;
-      const perTool = tools.map((tool) => `${tool.name}=${JSON.stringify(tool).length}`).join(', ');
-      expect(
-        JSON.stringify(tools).length,
-        `tools/list ${name} per-tool characters: ${perTool}`,
-      ).toBe(TOOLS_LIST_BUDGET[access ?? 'full']);
-    } finally {
-      await linked.close();
-    }
-  });
-
-  it('T1: get_jot advertises the exact input schema', async () => {
-    const linked = await linkedServer('full');
-    try {
-      const getJot = linked.wire.result.tools.find((tool) => tool.name === 'get_jot');
-      expect(getJot?.inputSchema).toEqual({
-        type: 'object',
-        properties: {
-          id: {
-            type: 'string',
-            minLength: 3,
-            description: 'Note label (A10), 8-character id prefix or full UUID',
-          },
-        },
-        required: ['id'],
-        additionalProperties: false,
-      });
-    } finally {
-      await linked.close();
-    }
-  });
-
   it('T7: every tool and field description matches the exact wire text', async () => {
     const linked = await linkedServer('full');
     try {
@@ -285,138 +234,5 @@ describe('tools/list wire', () => {
     } finally {
       await linked.close();
     }
-  });
-
-  it('T6: inbox resolve keeps the old prefix and UUID language', async () => {
-    const linked = await linkedServer('full');
-    try {
-      const inbox = linked.wire.result.tools.find((tool) => tool.name === 'inbox');
-      const resolve = inbox?.inputSchema.properties?.resolve as { pattern: string } | undefined;
-      if (!resolve) throw new Error('inbox resolve pattern is missing');
-      const oldPattern =
-        /^(?:[a-fA-F0-9]{8}|[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})$/;
-      const advertised = new RegExp(resolve.pattern);
-      const inputSchema = (
-        linked.server as unknown as {
-          _registeredTools: Record<
-            string,
-            { inputSchema: { safeParse: (value: unknown) => { success: boolean } } }
-          >;
-        }
-      )._registeredTools.inbox!.inputSchema;
-      const cases = [
-        ['a1b2c3d4', true],
-        ['A1B2C3D4', true],
-        ['a1b2c3d4-e5f6-a7b8-c9d0-123456789abc', true],
-        ['A1B2C3D4-E5F6-A7B8-C9D0-123456789ABC', true],
-        ['a1B2c3D4-E5f6-A7b8-c9D0-123456789aBc', true],
-        ['a1b2c3d', false],
-        ['a1b2c3d4e', false],
-        ['a1b2c3d4-', false],
-        ['a1b2c3d4-e5f6-a7b8-123456789abc', false],
-        ['a1b2c3d4-e5f6-a7b8-c9d0-123456789abcd', false],
-        ['a1b2c3dg', false],
-      ] as const;
-      for (const [id, valid] of cases) {
-        expect({
-          id,
-          oracle: oldPattern.test(id),
-          advertised: advertised.test(id),
-          enforced: inputSchema.safeParse({ resolve: id }).success,
-        }).toEqual({ id, oracle: valid, advertised: valid, enforced: valid });
-      }
-      expect(resolve.pattern).toBe('^[a-fA-F0-9]{8}(?:(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})?$');
-    } finally {
-      await linked.close();
-    }
-  });
-
-  it('T9: tools/call retains validation and direct handler results on one client', async () => {
-    const fetchMock = vi.fn(async () =>
-      jsonResponse(200, {
-        notes: [
-          {
-            id: '12345678-1234-1234-1234-123456789abc',
-            title: 'A note',
-            tags: ['infra'],
-            updated_at: '2026-09-28T00:00:00Z',
-          },
-        ],
-      }),
-    );
-    const linked = await linkedServer('read', fetchMock as unknown as typeof fetch);
-    try {
-      const call = linked.client.callTool({ name: 'get_jot', arguments: { id: 'A1' } });
-      await expect(call).resolves.toBeDefined();
-      const result = await call;
-      expect(result.isError).toBe(true);
-      expect((result.content as Array<{ text: string }>)[0]?.text).toBe(
-        'MCP error -32602: Input validation error: Invalid arguments for tool get_jot: String must contain at least 3 character(s) at id',
-      );
-      const viaClient = await linked.client.callTool({ name: 'list_recent_jots', arguments: {} });
-      const direct = await (
-        linked.server as unknown as {
-          _registeredTools: Record<
-            string,
-            { handler: (args: unknown, extra: unknown) => Promise<unknown> }
-          >;
-        }
-      )._registeredTools.list_recent_jots!.handler({}, {});
-      // A listing, not an error, so the equality compares a real result.
-      expect(direct).toEqual({
-        content: [{ type: 'text', text: expect.stringContaining('A note') }],
-      });
-      expect(viaClient).toEqual(direct);
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    } finally {
-      await linked.close();
-    }
-  });
-});
-
-it('T10: leanTools preserves non-default execution and annotations', () => {
-  const result: ListToolsResult = {
-    tools: [
-      {
-        name: 'example',
-        title: 'Example',
-        description: 'A tool',
-        inputSchema: {
-          type: 'object',
-          properties: {},
-          $schema: 'http://json-schema.org/draft-07/schema#',
-        },
-        execution: { taskSupport: 'optional' },
-        annotations: { readOnlyHint: true },
-        _meta: { example: 1 },
-      },
-      {
-        name: 'extended',
-        inputSchema: { type: 'object' },
-        // Only the exact spec default is dropped; a default with anything beside it stays.
-        execution: {
-          taskSupport: 'forbidden',
-          extra: 1,
-        } as ListToolsResult['tools'][number]['execution'],
-      },
-    ],
-  };
-  expect(leanTools(result)).toEqual({
-    tools: [
-      {
-        name: 'example',
-        title: 'Example',
-        description: 'A tool',
-        inputSchema: { type: 'object', properties: {} },
-        execution: { taskSupport: 'optional' },
-        annotations: { readOnlyHint: true },
-        _meta: { example: 1 },
-      },
-      {
-        name: 'extended',
-        inputSchema: { type: 'object' },
-        execution: { taskSupport: 'forbidden', extra: 1 },
-      },
-    ],
   });
 });

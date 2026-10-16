@@ -584,8 +584,8 @@ export function runWhere(env: NodeJS.ProcessEnv): void {
 export interface RunKeyDeps {
   env?: NodeJS.ProcessEnv;
   flags?: ReadonlyMap<string, string>;
-  // Bypasses the real prompt entirely — used by orchestration tests that
-  // don't want to drive stream mechanics (those live in prompt.test.ts).
+  // Bypasses the real prompt entirely, so a test need not drive stream
+  // mechanics. No test drives those mechanics.
   readHidden?: () => Promise<string>;
   input?: ReadHiddenLineOptions['input'];
   output?: ReadHiddenLineOptions['output'];

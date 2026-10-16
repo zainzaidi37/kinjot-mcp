@@ -36,10 +36,10 @@ export const POINTER_VERSION = 1;
  * comparison keys spelled the way the database spells them (pointer.rs).
  *
  * The app's own bytes are committed at
- * `packages/core/fixtures/local-pointer/v1.json` and read back through this
- * module in `pointer.test.ts`, which is what ties this declaration to the Rust
- * writer it mirrors. The webview states the same shape a third time
- * (`apps/web/src/desktop/local-pointer.ts`) and parses the same fixture.
+ * `packages/core/fixtures/local-pointer/v1.json`. No test reads them through
+ * this module since the 2026-10-16 test cut, so nothing ties this declaration
+ * to the Rust writer it mirrors; change both together. The webview states the
+ * same shape a third time (`apps/web/src/desktop/local-pointer.ts`).
  *
  * Zod rather than a hand-rolled chain of `typeof` clauses: this package already
  * depends on it, and the two `.min(1)` bounds below are the part a reader has to
