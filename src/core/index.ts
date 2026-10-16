@@ -1798,7 +1798,7 @@ export * from './sqlite-ddl.js';
 /**
  * The shared save-note semantics (plans/desktop-app.md §6): pure planning
  * functions that turn "jot this, here, with these tags" into row inserts,
- * ported from `mcp_save_note` and pinned to it by a conformance suite.
+ * ported from `mcp_save_note` and matching it row for row.
  *
  * Deliberately barrel-reachable: the barrel's closure is exactly what the
  * vendoring generator (`plans/desktop-app.md` §4.5) copies into

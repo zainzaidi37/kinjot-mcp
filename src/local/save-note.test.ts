@@ -8,9 +8,8 @@ import { FIXTURE_WORKSPACE, makeLibraryFixture } from './library-fixture.js';
 import { applySaveNotePlan, saveNoteLocally } from './save-note.js';
 
 /**
- * The local applier. The *planning* is `planSaveNote`'s, pinned to
- * `mcp_save_note` row-for-row by `supabase/tests/save-note-conformance.test.ts`
- * — what these cases pin is what this package adds: that the plan is applied in
+ * The local applier. The *planning* is `planSaveNote`'s, which matches
+ * `mcp_save_note` row-for-row — what these cases pin is what this package adds: that the plan is applied in
  * order, all-or-nothing, into the library the handshake opened.
  */
 

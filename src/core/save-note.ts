@@ -12,10 +12,9 @@
  * SQLite with no Postgres behind it. The folder and tag rules must agree in
  * both paths, or the same `jot` command can produce different rows by mode.
  *
- * So the logic is ported **once, here, as a pure function**, and a conformance
- * suite (`supabase/tests/save-note-conformance.test.ts`) diffs the rows this
- * module plans against the rows `mcp_save_note` actually writes, on every CI
- * run that touches this package.
+ * So the logic is ported **once, here, as a pure function**, and the rows this
+ * module plans must match the rows `mcp_save_note` actually writes. No test
+ * diffs the two, so a change to either changes both in the same PR.
  *
  * ## Shape: a planner, not a store
  *
@@ -32,7 +31,7 @@
  * reasons beyond testability. The vendored copy of this file runs inside the
  * `kinjot` CLI (§4.5), where a global `crypto` is not guaranteed across the
  * whole supported Node range; and a planner that reads the clock cannot be
- * replayed, which is what the conformance suite does to compare two engines.
+ * replayed to compare two engines.
  *
  * ## Timestamp and `sync_seq` ownership
  *
@@ -64,7 +63,7 @@
  *
  * Four behaviours below are quirks of the SQL that a hand-port naturally
  * "corrects". Each is live behaviour that user data already depends on, so each
- * is reproduced deliberately and named in the conformance matrix:
+ * is reproduced deliberately:
  *
  * 1. **Folders match case-insensitively; tags match case-sensitively.**
  *    `lower(name) = lower(trim(p_folder))` for folders, plain `name = v_tag`
@@ -96,9 +95,8 @@
  *
  * Both are NULL-propagation accidents in the SQL rather than designed
  * behaviour, and both are already refused before the RPC by `mcp-api`'s
- * argument validation. They are recorded here, and asserted on the Postgres
- * side of the conformance suite, so nobody "discovers" them later and ports
- * them:
+ * argument validation. They are recorded here so nobody "discovers" them
+ * later and ports them:
  *
  * - **A NULL element in `p_tags`.** `trim(NULL)` is NULL, `length(NULL)` is
  *   NULL, and `continue when NULL` does not continue — so the loop falls
@@ -420,8 +418,8 @@ export function planSaveNote(context: SaveNoteContext, input: SaveNoteInput): Sa
  * excluded from reads. Without an exclusion set, the lookup orders by
  * created_at alone.
  *
- * SQL ties on created_at are arbitrary. Here ties break on id; the conformance
- * fixtures avoid tied instants and assert that using compareTimestamps.
+ * SQL ties on created_at are arbitrary. Here ties break on id, so the two
+ * engines agree only where instants are not tied.
  */
 function oldestLiveFolderMatching(
   folders: readonly ExistingFolder[],
@@ -469,9 +467,9 @@ function isOlder(candidate: ExistingFolder, incumbent: ExistingFolder): boolean 
  * `'4' < 'Z'` would make the *later* of those sort first.
  *
  * So the comparison is on a parsed `(epoch milliseconds, nanoseconds)` pair.
- * Exported because the conformance harness has to assert its fixtures at
- * exactly this granularity, and re-deriving the parse there would be a second
- * hand-port of the thing this module exists to have only one of.
+ * Exported so a caller comparing timestamps uses exactly this granularity:
+ * re-deriving the parse would be a second hand-port of the thing this module
+ * exists to have only one of.
  *
  * **Throws on an unparseable value** rather than ordering it arbitrarily. A
  * `created_at` that is not a timestamp cannot have come from either writer, so
@@ -559,9 +557,8 @@ export interface TagVocabularyLink {
  *
  * **Ordering caveat.** The SQL's tiebreak is `order by ... t.name, t.id`,
  * evaluated under the database collation; this compares by code point.
- * They agree on same-case ASCII and can disagree otherwise — the conformance
- * suite asserts the ordering only over fixtures where they cannot differ,
- * and asserts membership everywhere else.
+ * They agree on same-case ASCII and can disagree otherwise, so only
+ * membership, not order, matches the SQL in general.
  */
 export function selectTagVocabulary(input: {
   readonly tags: readonly ExistingTag[];

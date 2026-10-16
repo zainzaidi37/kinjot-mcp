@@ -1,11 +1,10 @@
 // `jot` against the local library: the vendored planner, applied.
 //
 // The planning half is not written here on purpose — `planSaveNote`
-// (`../core/save-note.ts`) is the single port of `mcp_save_note`, pinned to the
-// RPC row-for-row by `supabase/tests/save-note-conformance.test.ts` (§6, §9).
-// This module is the *applier* the plan needs, and it owes the plan exactly two
-// properties the conformance suite depends on: the ops run in order, and they
-// run all-or-nothing.
+// (`../core/save-note.ts`) is the single port of `mcp_save_note`, matching the
+// RPC row-for-row (§6, §9). This module is the *applier* the plan needs, and it
+// owes the plan exactly two properties that match depends on: the ops run in
+// order, and they run all-or-nothing.
 
 import { randomUUID } from 'node:crypto';
 import {
@@ -108,9 +107,8 @@ function inWriteTransaction<T>(db: SqliteDatabase, work: () => T): T {
  * Runs the ops as one transaction.
  *
  * All-or-nothing is not a nicety: `mcp_save_note` rolls back the folder and
- * tags it had already created when the note insert conflicts, and the
- * conformance suite — which runs *this* function — asserts the local side
- * leaves the library exactly as it found it.
+ * tags it had already created when the note insert conflicts, and the local
+ * side must leave the library exactly as it found it.
  */
 export function applySaveNotePlan(
   db: SqliteDatabase,
