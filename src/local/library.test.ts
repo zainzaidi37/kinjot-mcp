@@ -17,14 +17,16 @@ describe('the pointer handshake', () => {
 
   it('a dangling db_path is a hard error that never falls through to the server', () => {
     makeLibrary(dir);
-    rmSync(join(dir, 'local'), { recursive: true, force: true });
+    const db = join(dir, 'local', 'library.db');
+    for (const suffix of ['', '-wal', '-shm']) rmSync(`${db}${suffix}`, { force: true });
     let message = '';
     try {
       openLocalLibrary(dir);
     } catch (error) {
       message = (error as Error).message;
     }
-    expect(message).toContain(join(dir, 'local', 'library.db'));
+    expect(message).toContain('named by the pointer is missing');
+    expect(message).toContain(db);
     expect(message).toContain('nothing was sent to the server');
     // And the refusal did not mint the library it was pointed at.
     expect(existsSync(join(dir, 'local', 'library.db'))).toBe(false);

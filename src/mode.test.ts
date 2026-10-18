@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { saveStoredKey } from './configFile.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LocalBackend, resolveBackend } from './backend.js';
+import { saveStoredKey, saveStoredMode } from './configFile.js';
 import { pointerPath } from './local/pointer.js';
 import { ModeError, resolveMode } from './mode.js';
 
@@ -40,8 +41,9 @@ describe('resolveMode', () => {
   });
 
   it('rung 4: both available and no mode is a hard error naming `kinjot use account`', () => {
-    saveStoredKey(GOOD_KEY, dir);
     writePointer();
+    expect(() => resolveMode(env({ KINJOT_API_KEY: GOOD_KEY }))).toThrow(ModeError);
+    saveStoredKey(GOOD_KEY, dir);
     expect(() => resolveMode(env())).toThrow(ModeError);
     const message = (() => {
       try {
@@ -54,5 +56,32 @@ describe('resolveMode', () => {
     expect(message).toContain('kinjot use account');
     expect(message).toContain('kinjot use local');
     expect(message).toContain('Nothing was written');
+  });
+});
+
+describe('resolveBackend local routing', () => {
+  it('keeps a chosen local library local when an account key is also stored', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kinjot-backend-'));
+    try {
+      writeFileSync(
+        pointerPath(dir),
+        JSON.stringify({
+          version: 1,
+          db_path: join(dir, 'local', 'library.db'),
+          workspace_uuid: '11111111-1111-4111-8111-111111111111',
+          schema_version: 2,
+        }),
+      );
+      saveStoredKey(GOOD_KEY, dir);
+      saveStoredMode('local', dir);
+      const makeApi = vi.fn(() => {
+        throw new Error('account backend built');
+      });
+      const result = resolveBackend({ KINJOT_CONFIG_DIR: dir }, makeApi);
+      expect(result.backend).toBeInstanceOf(LocalBackend);
+      expect(makeApi).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
