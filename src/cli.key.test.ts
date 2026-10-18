@@ -52,6 +52,7 @@ describe('runKey', () => {
   });
 
   it('happy path: validates the pasted key in one request, saves it, and prints success', async () => {
+    process.env.KINJOT_API_KEY = `kj_live_${'B'.repeat(43)}`;
     const fetchMock = vi.fn(async (_url: string | URL | Request, init: RequestInit) =>
       setupResponse(init),
     );
@@ -80,5 +81,23 @@ describe('runKey', () => {
     const output = stdout.all();
     expect(output.indexOf('claude mcp add')).toBeLessThan(output.indexOf('codex mcp add'));
     expect(output.indexOf('codex mcp add')).toBeLessThan(output.indexOf('mcpServers'));
+  });
+
+  it('refuses an API-rejected pasted key without replacing the saved account', async () => {
+    const { saveStoredKey } = await import('./configFile.js');
+    const previousKey = `kj_live_${'C'.repeat(43)}`;
+    saveStoredKey(previousKey, dir);
+    const before = readFileSync(configFilePath(dir), 'utf8');
+    const fetchMock = vi.fn(async () => jsonResponse(401, { error: 'invalid API key' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { runKey } = await import('./cli.js');
+    const stdout = capture();
+
+    await expect(
+      runKey({ readHidden: async () => GOOD_KEY, stdout, stderr: capture(), env: process.env }),
+    ).rejects.toThrow('API key was rejected');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(readFileSync(configFilePath(dir), 'utf8')).toBe(before);
+    expect(stdout.all()).not.toContain('ok ✔');
   });
 });
