@@ -1026,6 +1026,14 @@ export const RecallPeriodUsageSchema = z.object({
 export type RecallPeriodUsage = z.infer<typeof RecallPeriodUsageSchema>;
 
 /**
+ * Hundredths of a credit in one credit (1 credit = $0.01 of provider list
+ * cost; `plans/ai-credits-2026-10-20.md` §3.1). Mirrors
+ * `supabase/functions/_shared/ai-credit-rates.ts`, pinned in
+ * `supabase/tests/core-mirror.unit.test.ts`.
+ */
+export const UNITS_PER_CREDIT = 100;
+
+/**
  * One dictation engine's price, as the server publishes it
  * (`plans/voice-to-text.md` §2b). Mirrors
  * `supabase/functions/_shared/voice-credits.ts`, which is the server's copy,
