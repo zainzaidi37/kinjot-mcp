@@ -1022,6 +1022,8 @@ export const RecallPeriodUsageSchema = z.object({
    */
   voice_credits: z.number().int().optional(),
   voice_seconds: z.number().int().optional(),
+  ai_units: z.number().int().nonnegative().optional(),
+  plan_ends_at: timestamptz.nullable().optional(),
 });
 export type RecallPeriodUsage = z.infer<typeof RecallPeriodUsageSchema>;
 
@@ -2017,4 +2019,15 @@ const CHAT_STREAM_EVENT_NAME_SET: ReadonlySet<string> = new Set(CHAT_STREAM_EVEN
 export function parseChatStreamEvent(event: string, data: unknown): ChatStreamEvent | null {
   if (!CHAT_STREAM_EVENT_NAME_SET.has(event)) return null;
   return ChatStreamEventSchema.parse({ event, data });
+}
+
+/** Display mirror of SQL ai_credit_period_limit (credit plan §6.3). */
+export function aiCreditPeriodLimit(
+  unitLimit: number,
+  windowStart: string | Date,
+  windowEnd: string | Date,
+): number {
+  const duration = new Date(windowEnd).getTime() - new Date(windowStart).getTime();
+  if (!Number.isFinite(duration) || duration <= 0 || duration >= 25 * 86400_000) return unitLimit;
+  return Math.max(1, Math.floor((unitLimit * duration) / (30 * 86400_000)));
 }

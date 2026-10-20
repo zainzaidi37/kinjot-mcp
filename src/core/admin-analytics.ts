@@ -343,6 +343,7 @@ export const AdminUserRowSchema = z.object({
   recalls_period: count,
   /** `recall_usage.count` for that period — the metered figure, which refunds move. */
   recall_quota_used: count,
+  ai_credits_used: z.number().nonnegative().optional(),
   tidy_runs_total: count,
   voice_seconds_period: count,
   /**
