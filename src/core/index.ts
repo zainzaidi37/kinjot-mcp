@@ -1128,6 +1128,15 @@ export const UsageLimitsSchema = z.object({
   chat_default_model: z.string().nullable().optional(),
   chat_cost: z.object({ unit: z.string(), per: z.string() }).optional(),
   chat_model_label: z.string().optional(),
+  /**
+   * The credit pool (`plans/ai-credits-2026-10-20.md` §7.5), sent only when
+   * the deployment enforces it: pool mode is `ai_credits_monthly_limit !==
+   * undefined`, and `null` is uncapped. `ai_credit_estimates` are credits per
+   * action kind, for copy; a record of numbers, so a new kind never fails the
+   * parse. Both `.optional()` for the voice fields' N−1 reason.
+   */
+  ai_credits_monthly_limit: z.number().positive().nullable().optional(),
+  ai_credit_estimates: z.record(z.string(), z.number()).optional(),
 });
 export type UsageLimits = z.infer<typeof UsageLimitsSchema>;
 /** One entry of `usage-limits`' `chat_models`. */
@@ -2002,6 +2011,10 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       status: z.enum(CHAT_ENDED_STATUSES),
       charged: z.boolean(),
       persisted: z.boolean(),
+      // The credit pool's seam stopped the turn before any answer text
+      // (plans/ai-credits-2026-10-20.md §7.4 item 4). Optional and additive:
+      // a function without the pool never sends it.
+      reason: z.literal('out_of_credits').optional(),
     }),
   }),
   z.object({
