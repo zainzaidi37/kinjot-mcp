@@ -1120,10 +1120,23 @@ export const UsageLimitsSchema = z.object({
    * All four are `.optional()` for the voice fields' N−1 reason: an older
    * server omits them. `provider`, `unit` and `per` are plain strings, not
    * enums: a newer server's provider or unit must not fail this whole parse,
-   * which would take the Usage view down with it.
+   * which would take the Usage view down with it. In pool mode each priced
+   * entry adds `credits_per_message`, that model's new-chat message in credits
+   * at each effort (`plans/ai-credits-2026-10-20.md` §8; absent in legacy). A
+   * malformed one reads as absent (`.catch`), never failing the parse.
    */
   chat_models: z
-    .array(z.object({ id: z.string(), label: z.string(), provider: z.string() }))
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        provider: z.string(),
+        credits_per_message: z
+          .object({ low: z.number(), medium: z.number(), high: z.number() })
+          .optional()
+          .catch(undefined),
+      }),
+    )
     .optional(),
   chat_default_model: z.string().nullable().optional(),
   chat_cost: z.object({ unit: z.string(), per: z.string() }).optional(),
@@ -1395,6 +1408,38 @@ export const CHAT_PROPOSAL_STATES = [
 export const CHAT_PROVIDER_IDS = ['anthropic', 'openai'] as const;
 export type ChatProviderId = (typeof CHAT_PROVIDER_IDS)[number];
 
+/**
+ * `chat_threads.next_turn_estimate`: what the thread's next message is
+ * expected to cost, in units, written by the chat function at the end of a
+ * pool or shadow turn (plans/ai-credits-2026-10-20.md §8, the composer's cost
+ * hints). One round only: a message that reads notes runs more, so it is a
+ * floor. Mirrored by `_shared/chat/next-turn-estimate.ts` (pinned in
+ * `supabase/tests/core-mirror.unit.test.ts`).
+ */
+const ChatEffortUnitsSchema = z.object({
+  low: z.number().int().nonnegative(),
+  medium: z.number().int().nonnegative(),
+  high: z.number().int().nonnegative(),
+});
+
+export const ChatNextTurnEstimateSchema = z.object({
+  /** The model the warm figure is for: the turn's. */
+  model: z.string(),
+  /** ISO; null when the next message cannot reuse the cache (the floor moved). */
+  warm_until: z.string().nullable(),
+  /** Every figure is per answer effort: only the round's expected output differs. */
+  warm_units: ChatEffortUnitsSchema,
+  /** Per offered model of the thread's provider; an unpriced model is absent. */
+  cold_units: z.record(z.string(), ChatEffortUnitsSchema),
+  /**
+   * A new chat's first message, per offered model of the thread's provider
+   * (an unpriced model is absent): `cold_units[model] − fresh_units[model]`
+   * is the history's share that a new chat avoids.
+   */
+  fresh_units: z.record(z.string(), ChatEffortUnitsSchema),
+});
+export type ChatNextTurnEstimate = z.infer<typeof ChatNextTurnEstimateSchema>;
+
 export const ChatThreadSchema = z.object({
   id: uuid,
   user_id: uuid,
@@ -1404,6 +1449,13 @@ export const ChatThreadSchema = z.object({
   provider: z.enum(CHAT_PROVIDER_IDS),
   /** The latest begun turn's model, a display convenience (the turn row's `model` is the record). */
   model: z.string().nullable(),
+  /**
+   * Null until a pool or shadow turn ends; absent from a server without the
+   * column. A malformed value reads as absent (`.catch`), so one bad row never
+   * fails `listThreads`' whole parse; the schema itself stays strict for the
+   * writer's mirror.
+   */
+  next_turn_estimate: ChatNextTurnEstimateSchema.nullable().optional().catch(undefined),
   created_at: timestamptz,
   updated_at: timestamptz,
   deleted_at: timestamptz.nullable(),
@@ -1933,6 +1985,11 @@ export const CHAT_ERROR_CODES = [
   'provider_declined',
   'provider_mismatch',
   'chat_unrecoverable',
+  // The credit pool's refusals (plans/ai-credits-2026-10-20.md §5.4, §6.3,
+  // §3.1): only a pool-mode function sends them.
+  'ai_busy',
+  'plan_ended',
+  'model_unpriced',
 ] as const;
 export type ChatErrorCode = (typeof CHAT_ERROR_CODES)[number];
 
@@ -2015,6 +2072,10 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       // (plans/ai-credits-2026-10-20.md §7.4 item 4). Optional and additive:
       // a function without the pool never sends it.
       reason: z.literal('out_of_credits').optional(),
+      // The seam stopped the turn after a round that delivered text (the turn
+      // ends `truncated`, its text kept). Optional and additive like `reason`;
+      // a plain string, so a newer server's value never fails the parse.
+      stop: z.string().optional(),
     }),
   }),
   z.object({
