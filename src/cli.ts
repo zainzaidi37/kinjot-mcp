@@ -142,7 +142,8 @@ function parseFlags(argv: string[]): { positional: string[]; flags: Map<string, 
 
 /**
  * Quote an environment value for the copy-pasteable POSIX shell commands
- * below. Keep identical to ApiKeysSection.tsx's commandArgument.
+ * below. Keep identical to `apps/web/src/lib/mcp-setup-command.ts`'s
+ * `commandArgument`.
  */
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
