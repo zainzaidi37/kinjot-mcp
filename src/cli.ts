@@ -26,7 +26,7 @@ import {
 import { openLocalLibrary } from './local/library.js';
 import { pointerExists, pointerPath } from './local/pointer.js';
 import { resolveMode } from './mode.js';
-import { readHiddenLine, type ReadHiddenLineOptions } from './prompt.js';
+import { readHiddenLine, withoutPasteMarkers, type ReadHiddenLineOptions } from './prompt.js';
 import { noteHandle } from './handle.js';
 import { isUuidShapeAnyCase } from './uuid.js';
 import { appendTextUsageError } from './append-text.js';
@@ -357,7 +357,7 @@ function readTtySetup(
     };
     const completeLine = () => {
       if (phase === 'project') {
-        answers.project = buffer;
+        answers.project = withoutPasteMarkers(buffer);
         buffer = '';
         output.write('\n');
         if (needKey) {
@@ -367,7 +367,7 @@ function readTtySetup(
           finish();
         }
       } else {
-        answers.key = buffer.replace(/[^A-Za-z0-9_]/g, '');
+        answers.key = withoutPasteMarkers(buffer).replace(/[^A-Za-z0-9_]/g, '');
         finish();
       }
     };
@@ -392,6 +392,7 @@ function readTtySetup(
           continue;
         }
         if (ch === '\x7f' || ch === '\x08') {
+          buffer = withoutPasteMarkers(buffer);
           if (buffer.length > 0) {
             buffer = buffer.slice(0, -1);
             if (phase === 'project') output.write('\b \b');

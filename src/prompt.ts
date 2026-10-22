@@ -20,9 +20,17 @@ export interface ReadHiddenLineOptions {
   prompt: string;
 }
 
-// Neutralizes bracketed-paste escape sequences (and anything else non-key-
-// shaped) that can ride along in a single pasted chunk; a kinjot key is only
-// ever letters, digits, and underscores.
+// A terminal left in bracketed-paste mode (xterm's `CSI 200 ~` / `CSI 201 ~`)
+// wraps a paste in these markers. Only the two whole sequences go, so a project
+// URL keeps its `[` and `~`, and `NON_KEY_CHARS` (and `readTtySetup`'s copy in
+// `cli.ts`) cannot keep their digits (#1500). A Backspace strips them first:
+// the last byte after a paste is the end marker's `~`.
+export function withoutPasteMarkers(text: string): string {
+  return text.replaceAll('\x1b[200~', '').replaceAll('\x1b[201~', '');
+}
+
+// Drops anything else non-key-shaped that can ride along in a pasted chunk;
+// `API_KEY_PATTERN` (`config.ts`) admits only letters, digits and underscores.
 const NON_KEY_CHARS = /[^A-Za-z0-9_]/g;
 
 export function readHiddenLine({
@@ -53,7 +61,7 @@ export function readHiddenLine({
       settled = true;
       cleanup();
       output.write('\n');
-      resolve(value.replace(NON_KEY_CHARS, ''));
+      resolve(withoutPasteMarkers(value).replace(NON_KEY_CHARS, ''));
     }
 
     function abort(error: Error): void {
@@ -92,7 +100,7 @@ export function readHiddenLine({
           return;
         }
         if (ch === '\x7f' || ch === '\x08') {
-          buffer = buffer.slice(0, -1);
+          buffer = withoutPasteMarkers(buffer).slice(0, -1);
           continue;
         }
         buffer += ch;

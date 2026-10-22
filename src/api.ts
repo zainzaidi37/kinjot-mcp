@@ -325,6 +325,7 @@ export class NotesApi {
         throw new ApiError(
           400,
           'This Kinjot backend does not support short ids yet; use the 8-character id prefix instead.',
+          'unsupported_action',
         );
       }
       throw error;
