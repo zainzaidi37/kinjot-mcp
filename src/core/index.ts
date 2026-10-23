@@ -1961,6 +1961,7 @@ export const CHAT_STREAM_EVENT_NAMES = [
   'turn',
   'status',
   'tool',
+  'drafting',
   'answer.delta',
   'proposal',
   'chip',
@@ -2028,6 +2029,12 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       summary: z.string(),
       notes: z.array(ChatNoteRefSchema).optional(),
     }),
+  }),
+  z.object({
+    // A proposal tool's call began streaming. A plain string: the web client's
+    // `chatRows.ts#CHAT_DRAFTING_COPY` names the tools it knows and falls back to Thinking….
+    event: z.literal('drafting'),
+    data: z.object({ tool: z.string() }),
   }),
   z.object({
     event: z.literal('answer.delta'),
