@@ -87,6 +87,21 @@ export const wireSchemas = {
     existing_tags: z.array(z.string()).optional().catch(undefined),
   }),
   list_recent_notes: z.object({ notes: z.array(searchHit) }),
+  list_open_tasks: z.object({
+    notes: z.array(
+      z.object({
+        id: z.string(),
+        short_id: z.number().int().nullable().optional(),
+        title: z.string(),
+        folder: z.string().nullable(),
+        tasks: z.array(
+          z.object({ text: z.string(), line: z.number(), due: z.string().nullable() }),
+        ),
+      }),
+    ),
+    scanned: z.number(),
+    truncated: z.boolean(),
+  }),
   search_notes: z.object({ notes: z.array(searchHit), total: z.number() }),
   recall: z.object({
     matches: z.array(

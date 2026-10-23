@@ -61,12 +61,13 @@ async function linkedServer(access: ApiKeyAccess | undefined, fetchImpl?: typeof
 }
 
 const ACCESS_TOOLS = {
-  read: ['find_jots', 'get_jot', 'inbox', 'list_recent_jots', 'recall_jots'],
+  read: ['find_jots', 'get_jot', 'inbox', 'list_open_tasks', 'list_recent_jots', 'recall_jots'],
   read_create: [
     'find_jots',
     'get_jot',
     'inbox',
     'jot',
+    'list_open_tasks',
     'list_recent_jots',
     'notify',
     'recall_jots',
@@ -79,6 +80,7 @@ const ACCESS_TOOLS = {
     'get_jot',
     'inbox',
     'jot',
+    'list_open_tasks',
     'list_recent_jots',
     'notify',
     'recall_jots',
@@ -189,6 +191,17 @@ const EXPECTED_DESCRIPTIONS: Record<
       'when the user explicitly asks what they have jotted recently. Read a full note with get_jot. ' +
       'Notes tagged autosave are left out; get_jot still reads one when the user gives its label.',
     fields: { limit: 'Max notes (default 10)' },
+  },
+  list_open_tasks: {
+    description:
+      "List the user's unchecked Markdown tasks (- [ ]) from their Kinjot notes, grouped by note with its label and folder. Use ONLY when the user asks about their tasks, to-dos or checklists. Optional filters: folder, tag, due (overdue, today, week). Read a note in full with get_jot. " +
+      'Notes tagged autosave are left out; get_jot still reads one when the user gives its label.',
+    fields: {
+      folder: 'Folder name; its subfolders included',
+      tag: 'Tag name',
+      due: 'overdue, today, or week (overdue through the next 7 days)',
+      limit: 'Max tasks (default 50)',
+    },
   },
 };
 

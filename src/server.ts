@@ -6,6 +6,8 @@ import {
   ApiError,
   KEY_INFO_DEADLINE_MS,
   NotesApi,
+  formatOpenTasks,
+  localDate,
   type FullNote,
   type SearchHit,
   type InboxListResult,
@@ -541,6 +543,37 @@ export function buildServer(
             'No jots yet. Notes tagged autosave are left out; get_jot can read one by its label.',
           );
         return textResult(notes.map(formatListLine).join('\n'));
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'list_open_tasks',
+    {
+      title: 'List open Kinjot tasks',
+      description:
+        "List the user's unchecked Markdown tasks (- [ ]) from their Kinjot notes, grouped by " +
+        'note with its label and folder. Use ONLY when the user asks about their tasks, to-dos ' +
+        'or checklists. Optional filters: folder, tag, due (overdue, today, week). Read a note ' +
+        'in full with get_jot. ' +
+        AUTOSAVE_DISCOVERY,
+      inputSchema: {
+        folder: z.string().min(1).optional().describe('Folder name; its subfolders included'),
+        tag: z.string().min(1).optional().describe('Tag name'),
+        due: z
+          .enum(['overdue', 'today', 'week'])
+          .optional()
+          .describe('overdue, today, or week (overdue through the next 7 days)'),
+        limit: z.number().int().min(1).max(100).optional().describe('Max tasks (default 50)'),
+      },
+    },
+    async ({ folder, tag, due, limit }) => {
+      try {
+        const today = localDate();
+        const result = await api.listOpenTasks({ folder, tag, due, limit, today });
+        return textResult(formatOpenTasks(result, today));
       } catch (error) {
         return errorResult(error);
       }

@@ -49,6 +49,7 @@ tagged and searchable.
 | `edit_jot`         | Replace one exact passage in a note, or change its title, tags or folder |
 | `append_to_jot`    | Add a paragraph to the end of a note                                     |
 | `list_recent_jots` | List your most recently updated notes                                    |
+| `list_open_tasks`  | List your unchecked tasks (`- [ ]`), grouped by note, with due dates     |
 | `upload_image`     | Upload a PNG or JPEG and return Markdown (Pro or self-hosted)            |
 | `notify`           | Send a brief question, blocker, handoff or requested completion to Inbox |
 | `inbox`            | List or resolve Inbox items when you explicitly ask                      |
@@ -87,13 +88,19 @@ kinjot append A10 --text "An update to this jot."
 kinjot upload-image shot.png --alt "Screenshot of the result"
 kinjot append A10 --text "$(kinjot upload-image shot.png)"
 kinjot recent 10
+kinjot tasks --due week          # unchecked tasks, overdue through the next 7 days
 kinjot notify "Review the deployment" --kind handoff --detail "Check the failing job."
 kinjot inbox                     # open handoffs in this repository
 kinjot inbox --all --kind any    # all agent messages, across repositories
 kinjot inbox resolve 1a2b3c4d --note "Picked up"
 ```
 
-Search, recall and recent leave out notes tagged `autosave`; `get` reads one by label.
+Search, recall, recent and tasks leave out notes tagged `autosave`; `get` reads one by label.
+
+`kinjot tasks` takes `--folder <name>` (its subfolders included), `--tag <name>`,
+`--due overdue|today|week`, `--limit <n>` (1 to 100, default 50) and `--json`.
+Due dates resolve against your computer's date. A backend too old for it says
+it does not list tasks yet.
 
 `kinjot add "Title" --id <uuid>` saves with a caller-supplied note ID; the
 ID may also appear before the title. `kinjot append A10 --no-snapshot` asks a
@@ -215,7 +222,7 @@ kinjot where          # show where jots go, and why
 
 - The desktop app creates and owns the library; the CLI never creates one.
 - Locally, only `kinjot add` and the MCP `jot` tool work. Search, recall, get,
-  recent and Inbox need an account or live in the app.
+  recent, tasks and Inbox need an account or live in the app.
 - If you have both a local library and a saved key, `kinjot` refuses to guess
   where a jot belongs. Run `kinjot use` once to choose, or set `KINJOT_MODE`
   for a single command.

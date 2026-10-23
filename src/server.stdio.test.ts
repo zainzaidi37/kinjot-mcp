@@ -44,6 +44,7 @@ it('K1: stdio advertises only the resolved account key access', async () => {
       'get_jot',
       'inbox',
       'jot',
+      'list_open_tasks',
       'list_recent_jots',
       'notify',
       'recall_jots',

@@ -23,6 +23,8 @@ import type {
   InboxListResult,
   InboxResolveInput,
   InboxResolveResult,
+  OpenTasksInput,
+  OpenTasksResult,
 } from './api.js';
 import { resolveConfig } from './config.js';
 import { openLocalLibrary } from './local/library.js';
@@ -47,12 +49,13 @@ export interface JotBackend {
   recallNotes(query: string): Promise<RecallMatch[]>;
   getNote(id: string): Promise<FullNote>;
   listRecentNotes(limit?: number): Promise<SearchHit[]>;
+  listOpenTasks(input?: OpenTasksInput): Promise<OpenTasksResult>;
 }
 
 /**
- * Search, recall, get and recent are unavailable through the local CLI. All
- * four have real answers in the desktop app — MiniSearch, saved Recall history,
- * the note list — and reimplementing any of them against SQLite in the CLI
+ * Search, recall, get, recent and open tasks are unavailable through the local
+ * CLI. All five have real answers in the desktop app — MiniSearch, saved Recall
+ * history, the note list, Checklists — and reimplementing any of them against SQLite in the CLI
  * would be a second search stack to keep in step with the app's. So each one
  * names the app.
  */
@@ -136,6 +139,10 @@ export class LocalBackend implements JotBackend {
   async listRecentNotes(): Promise<SearchHit[]> {
     throw notInLocalMode('listing recent jots');
   }
+
+  async listOpenTasks(): Promise<OpenTasksResult> {
+    throw notInLocalMode('listing open tasks');
+  }
 }
 
 function inboxLocalError(): LocalUnavailableError {
@@ -193,6 +200,7 @@ export function serveBackend(
     recallNotes: (query) => resolve().backend.recallNotes(query),
     getNote: (id) => resolve().backend.getNote(id),
     listRecentNotes: (limit) => resolve().backend.listRecentNotes(limit),
+    listOpenTasks: (input) => resolve().backend.listOpenTasks(input),
   };
 }
 

@@ -3,6 +3,9 @@ import {
   ApiError,
   KEY_INFO_DEADLINE_MS,
   NotesApi,
+  OPEN_TASK_DUE_FILTERS,
+  formatOpenTasks,
+  localDate,
   type ApiErrorKind,
   type RecallMatch,
   type SearchHit,
@@ -59,6 +62,9 @@ Usage:
                                  (text is read from stdin when piped)
   kinjot upload-image <path> [--alt <text>] [--json]
   kinjot recent [n]
+  kinjot tasks [--folder <name>] [--tag <name>] [--due overdue|today|week]
+               [--limit <n>] [--json]
+                                 unchecked tasks from your notes, grouped by note
   kinjot notify <title> --kind question|blocker|handoff|done|waiting
                 [--detail <text>] [--pr <url>] [--note <label>] [--cwd <dir>]
                 [--session <id>] [--agent <name>] [--id <uuid>]
@@ -78,7 +84,7 @@ Usage:
   kinjot help                    print this help (also --help, -h)
   kinjot --version               print the installed version (also -v, version)
 
-Search, recall and recent leave out notes tagged autosave; get reads one by label.
+Search, recall, recent and tasks leave out notes tagged autosave; get reads one by label.
 
 Environment:
   KINJOT_API_KEY   API key from the web app (Settings → API keys); overrides
@@ -92,8 +98,8 @@ unset.
 
 Local mode writes to the Kinjot desktop app's local library instead of your
 account. It needs the desktop app (which creates that library), and only
-\`kinjot add\` and the MCP jot tool work there — search, recall, get, recent and Inbox
-live in the app.
+\`kinjot add\` and the MCP jot tool work there — search, recall, get, recent, tasks
+and Inbox live in the app.
 
 Exit codes: 0 done; 1 ambiguous request failure (network, timeout, 5xx, 401, 429);
 2 usage or definite Inbox refusal; 3 note or Inbox item not found;
@@ -1042,6 +1048,36 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         const limit = positional[0] ? Number.parseInt(positional[0], 10) : 10;
         if (Number.isNaN(limit)) throw new UsageError('usage: kinjot recent [n]');
         (await resolveBackend(process.env).backend.listRecentNotes(limit)).forEach(printHit);
+        return;
+      }
+      case 'tasks': {
+        rejectUnknownFlags(flags, ['folder', 'tag', 'due', 'limit', 'json']);
+        const usage =
+          'usage: kinjot tasks [--folder <name>] [--tag <name>] [--due overdue|today|week] [--limit <n>] [--json]';
+        if (positional.length) throw new UsageError(usage);
+        const due = flags.get('due');
+        if (
+          due !== undefined &&
+          (due === 'any' || !(OPEN_TASK_DUE_FILTERS as readonly string[]).includes(due))
+        )
+          throw new UsageError(usage);
+        const limitFlag = flags.get('limit');
+        const limit = limitFlag === undefined ? undefined : Number(limitFlag);
+        if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100))
+          throw new UsageError('--limit must be a whole number from 1 to 100');
+        const today = localDate();
+        const result = await resolveBackend(process.env).backend.listOpenTasks({
+          folder: flags.get('folder'),
+          tag: flags.get('tag'),
+          due: due as 'overdue' | 'today' | 'week' | undefined,
+          limit,
+          today,
+        });
+        console.log(
+          flags.has('json')
+            ? terminalSafeJson(result)
+            : terminalSafeBody(formatOpenTasks(result, today)),
+        );
         return;
       }
       case 'help':
