@@ -1595,11 +1595,18 @@ export const ChatAppendPayloadSchema = z.object({ text: z.string() });
 /** A setting card: the allow-list of ids is enforced in the chat function. */
 export const ChatSettingPayloadSchema = z.object({ id: z.string(), value: jsonbValue });
 
+export const ChatReminderPayloadSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  time: z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/),
+  time_zone: z.string(),
+});
+
 const ChatProposalBaseSchema = z.object({
   id: uuid,
   thread_id: uuid,
   user_id: uuid,
   turn_id: uuid,
+  reminder_id: uuid.nullable().optional(),
   expected_title: z.string().nullable(),
   state: z.enum(CHAT_PROPOSAL_STATES),
   error_token: z.string().nullable(),
@@ -1611,7 +1618,7 @@ const ChatProposalBaseSchema = z.object({
 });
 /**
  * A `chat_proposals` row. `chat_proposals_note_kind` requires a note for edits,
- * appends, rewrites and applied creates; settings and unapplied creates have none.
+ * appends, rewrites, reminders and applied creates; settings and unapplied creates have none.
  * `decided_at` is set exactly when the proposal is no longer pending
  * (`chat_proposals_decided`).
  */
@@ -1621,6 +1628,11 @@ export const ChatProposalSchema = z
       kind: z.literal('edit'),
       note_id: uuid,
       payload: ChatEditPayloadSchema,
+    }),
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('reminder'),
+      note_id: uuid,
+      payload: ChatReminderPayloadSchema,
     }),
     ChatProposalBaseSchema.extend({
       kind: z.literal('rewrite'),
@@ -1662,7 +1674,8 @@ export const ChatProposalSchema = z
 export type ChatProposal = z.infer<typeof ChatProposalSchema>;
 
 /**
- * `chat_apply_proposal`, `chat_apply_create_proposal` and `chat_decline_proposal`'s
+ * `chat_apply_proposal`, `chat_apply_create_proposal`, `chat_mark_reminder_applied`
+ * and `chat_decline_proposal`'s
  * answer. `note` is the `notes` row after an applied edit, append or create; a foreign,
  * missing or deleted proposal answers `{state: null, error_token: 'not_found'}`.
  */
@@ -1683,6 +1696,7 @@ export const CHAT_DECISION_ERROR_TOKENS = [
   'edit_body_changed',
   'invalid_create',
   'note_create_failed',
+  'reminder_missing',
 ] as const;
 export const ChatDecisionResultSchema = z.object({
   state: z.enum(CHAT_PROPOSAL_STATES).nullable(),
@@ -2093,23 +2107,45 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
   }),
   z.object({
     event: z.literal('card'),
-    data: z.object({
-      proposal_id: uuid,
-      kind: z.string(),
-      note: ChatNoteRefSchema.optional(),
-      old: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
-      new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
-      text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
-      title: z.string().optional(),
-      body: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
-      base_version: z
-        .string()
-        .regex(/^sha256:[0-9a-f]{64}$/)
-        .optional(),
-      tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
-      folder: z.string().optional(),
-      setting: z.object({ id: z.string(), value: z.string() }).optional(),
-    }),
+    data: z
+      .object({
+        proposal_id: uuid,
+        kind: z.string(),
+        note: ChatNoteRefSchema.optional(),
+        old: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+        new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+        text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+        title: z.string().optional(),
+        body: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+        date: ChatReminderPayloadSchema.shape.date.optional(),
+        time: ChatReminderPayloadSchema.shape.time.optional(),
+        time_zone: ChatReminderPayloadSchema.shape.time_zone.optional(),
+        existing: ChatReminderPayloadSchema.extend({
+          id: uuid,
+          revision: z.number().int().positive(),
+        }).optional(),
+        base_version: z
+          .string()
+          .regex(/^sha256:[0-9a-f]{64}$/)
+          .optional(),
+        tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
+        folder: z.string().optional(),
+        setting: z.object({ id: z.string(), value: z.string() }).optional(),
+      })
+      .superRefine((card, ctx) => {
+        if (
+          card.kind === 'reminder' &&
+          (card.note === undefined ||
+            card.date === undefined ||
+            card.time === undefined ||
+            card.time_zone === undefined)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'reminder requires a note and schedule',
+          });
+        }
+      }),
   }),
   z.object({
     event: z.literal('chip'),
