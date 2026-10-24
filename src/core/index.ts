@@ -747,6 +747,8 @@ const AgentActivityKindsSchema = z.discriminatedUnion('kind', [
   AgentActivityBaseSchema.extend({
     kind: z.literal('edit'),
     detail: z.object({
+      /** A Kin chat multi-edit card's change count (`chat_apply_proposal`, WO W4). */
+      edits: z.number().int().positive().optional(),
       title_changed: z.literal(true).optional(),
       body: z
         .object({ removed: z.number().int().nonnegative(), added: z.number().int().nonnegative() })
@@ -1396,7 +1398,6 @@ export const CHAT_TURN_STATUSES = [
   'refused',
 ] as const;
 export const CHAT_EFFORTS = ['low', 'medium', 'high'] as const;
-export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting', 'create', 'rewrite'] as const;
 export const CHAT_PROPOSAL_STATES = [
   'pending',
   'applied',
@@ -1578,6 +1579,31 @@ export const ChatEditPayloadSchema = z.object({
   remove_tags: z.array(z.string()).nullable().optional(),
   folder: z.string().nullable().optional(),
 });
+export const ChatMultiEditItemSchema = z
+  .object({
+    old_string: z.string().min(1).max(100_000),
+    new_string: z.string().max(100_000),
+    replace_all: z.boolean().optional(),
+  })
+  .strict()
+  .refine((edit) => edit.old_string !== edit.new_string);
+export const ChatMultiEditPayloadSchema = z
+  .object({
+    edits: z
+      .array(ChatMultiEditItemSchema)
+      .min(1)
+      .max(20)
+      .refine(
+        (edits) =>
+          edits.reduce((sum, edit) => sum + edit.old_string.length + edit.new_string.length, 0) <=
+          100_000,
+      ),
+    title: z.string().optional(),
+    add_tags: z.array(z.string()).optional(),
+    remove_tags: z.array(z.string()).optional(),
+    folder: z.string().optional(),
+  })
+  .strict();
 export const ChatCreatePayloadSchema = z.object({
   title: z.string(),
   body: z.string(),
@@ -1624,6 +1650,11 @@ const ChatProposalBaseSchema = z.object({
  */
 export const ChatProposalSchema = z
   .discriminatedUnion('kind', [
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('multi_edit'),
+      note_id: uuid,
+      payload: ChatMultiEditPayloadSchema,
+    }),
     ChatProposalBaseSchema.extend({
       kind: z.literal('edit'),
       note_id: uuid,
@@ -2111,6 +2142,9 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       .object({
         proposal_id: uuid,
         kind: z.string(),
+        edits: ChatMultiEditPayloadSchema.shape.edits.optional(),
+        add_tags: z.array(z.string()).optional(),
+        remove_tags: z.array(z.string()).optional(),
         note: ChatNoteRefSchema.optional(),
         old: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
         new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
