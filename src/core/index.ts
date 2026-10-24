@@ -1396,7 +1396,7 @@ export const CHAT_TURN_STATUSES = [
   'refused',
 ] as const;
 export const CHAT_EFFORTS = ['low', 'medium', 'high'] as const;
-export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting', 'create'] as const;
+export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting', 'create', 'rewrite'] as const;
 export const CHAT_PROPOSAL_STATES = [
   'pending',
   'applied',
@@ -1584,6 +1584,13 @@ export const ChatCreatePayloadSchema = z.object({
   folder: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
+export const ChatRewritePayloadSchema = z
+  .object({
+    body: z.string().min(1).max(100_000),
+    title: z.string().trim().min(1).max(500).optional(),
+    base_version: z.string().regex(/^sha256:[0-9a-f]{64}$/),
+  })
+  .strict();
 export const ChatAppendPayloadSchema = z.object({ text: z.string() });
 /** A setting card: the allow-list of ids is enforced in the chat function. */
 export const ChatSettingPayloadSchema = z.object({ id: z.string(), value: jsonbValue });
@@ -1604,7 +1611,7 @@ const ChatProposalBaseSchema = z.object({
 });
 /**
  * A `chat_proposals` row. `chat_proposals_note_kind` requires a note for edits,
- * appends and applied creates; settings and unapplied creates have none.
+ * appends, rewrites and applied creates; settings and unapplied creates have none.
  * `decided_at` is set exactly when the proposal is no longer pending
  * (`chat_proposals_decided`).
  */
@@ -1614,6 +1621,11 @@ export const ChatProposalSchema = z
       kind: z.literal('edit'),
       note_id: uuid,
       payload: ChatEditPayloadSchema,
+    }),
+    ChatProposalBaseSchema.extend({
+      kind: z.literal('rewrite'),
+      note_id: uuid,
+      payload: ChatRewritePayloadSchema,
     }),
     ChatProposalBaseSchema.extend({
       kind: z.literal('append'),
@@ -1668,6 +1680,7 @@ export const CHAT_DECISION_ERROR_TOKENS = [
   'edit_no_match',
   'edit_ambiguous',
   'edit_title_changed',
+  'edit_body_changed',
   'invalid_create',
   'note_create_failed',
 ] as const;
@@ -2089,6 +2102,10 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
       title: z.string().optional(),
       body: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      base_version: z
+        .string()
+        .regex(/^sha256:[0-9a-f]{64}$/)
+        .optional(),
       tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
       folder: z.string().optional(),
       setting: z.object({ id: z.string(), value: z.string() }).optional(),
