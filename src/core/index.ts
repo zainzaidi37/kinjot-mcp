@@ -1381,7 +1381,8 @@ export const ServerNoteTagSchema = NoteTagSchema.extend({ sync_seq: syncSeq });
  * three server-written tables the browser reads on demand and never syncs,
  * like `recalls`. Only the chat function's service-only SQL writes them; the
  * client may soft-delete a thread and decide a proposal through
- * `chat_apply_proposal` / `chat_decline_proposal`.
+ * `chat_apply_proposal` (a create card through `chat_apply_create_proposal`)
+ * / `chat_decline_proposal`.
  */
 export const CHAT_ROLES = ['user', 'assistant', 'system'] as const;
 export const CHAT_TURN_STATUSES = [
@@ -1395,7 +1396,7 @@ export const CHAT_TURN_STATUSES = [
   'refused',
 ] as const;
 export const CHAT_EFFORTS = ['low', 'medium', 'high'] as const;
-export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting'] as const;
+export const CHAT_PROPOSAL_KINDS = ['edit', 'append', 'setting', 'create'] as const;
 export const CHAT_PROPOSAL_STATES = [
   'pending',
   'applied',
@@ -1577,6 +1578,12 @@ export const ChatEditPayloadSchema = z.object({
   remove_tags: z.array(z.string()).nullable().optional(),
   folder: z.string().nullable().optional(),
 });
+export const ChatCreatePayloadSchema = z.object({
+  title: z.string(),
+  body: z.string(),
+  folder: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+});
 export const ChatAppendPayloadSchema = z.object({ text: z.string() });
 /** A setting card: the allow-list of ids is enforced in the chat function. */
 export const ChatSettingPayloadSchema = z.object({ id: z.string(), value: jsonbValue });
@@ -1596,9 +1603,10 @@ const ChatProposalBaseSchema = z.object({
   deleted_at: timestamptz.nullable(),
 });
 /**
- * A `chat_proposals` row. `note_id` is null exactly for a setting
- * (`chat_proposals_note_kind`), and `decided_at` is set exactly when the
- * proposal is no longer pending (`chat_proposals_decided`).
+ * A `chat_proposals` row. `chat_proposals_note_kind` requires a note for edits,
+ * appends and applied creates; settings and unapplied creates have none.
+ * `decided_at` is set exactly when the proposal is no longer pending
+ * (`chat_proposals_decided`).
  */
 export const ChatProposalSchema = z
   .discriminatedUnion('kind', [
@@ -1613,12 +1621,24 @@ export const ChatProposalSchema = z
       payload: ChatAppendPayloadSchema,
     }),
     ChatProposalBaseSchema.extend({
+      kind: z.literal('create'),
+      note_id: uuid.nullable(),
+      payload: ChatCreatePayloadSchema,
+    }),
+    ChatProposalBaseSchema.extend({
       kind: z.literal('setting'),
       note_id: z.null(),
       payload: ChatSettingPayloadSchema,
     }),
   ])
   .superRefine((row, ctx) => {
+    if (row.kind === 'create' && (row.state === 'applied') !== (row.note_id !== null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'create has a note exactly when applied',
+        path: ['note_id'],
+      });
+    }
     if ((row.state === 'pending') !== (row.decided_at === null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1630,8 +1650,8 @@ export const ChatProposalSchema = z
 export type ChatProposal = z.infer<typeof ChatProposalSchema>;
 
 /**
- * `chat_apply_proposal` / `chat_decline_proposal`'s answer. `note` is the
- * updated `notes` row after an applied edit or append, else null; a foreign,
+ * `chat_apply_proposal`, `chat_apply_create_proposal` and `chat_decline_proposal`'s
+ * answer. `note` is the `notes` row after an applied edit, append or create; a foreign,
  * missing or deleted proposal answers `{state: null, error_token: 'not_found'}`.
  */
 export const CHAT_DECISION_ERROR_TOKENS = [
@@ -1648,6 +1668,8 @@ export const CHAT_DECISION_ERROR_TOKENS = [
   'edit_no_match',
   'edit_ambiguous',
   'edit_title_changed',
+  'invalid_create',
+  'note_create_failed',
 ] as const;
 export const ChatDecisionResultSchema = z.object({
   state: z.enum(CHAT_PROPOSAL_STATES).nullable(),
@@ -1964,6 +1986,7 @@ export const CHAT_STREAM_EVENT_NAMES = [
   'drafting',
   'answer.delta',
   'proposal',
+  'card',
   'chip',
   'sources',
   'done',
@@ -2050,6 +2073,22 @@ export const ChatStreamEventSchema = z.discriminatedUnion('event', [
       new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
       text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
       title: z.string().optional(),
+      tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
+      folder: z.string().optional(),
+      setting: z.object({ id: z.string(), value: z.string() }).optional(),
+    }),
+  }),
+  z.object({
+    event: z.literal('card'),
+    data: z.object({
+      proposal_id: uuid,
+      kind: z.string(),
+      note: ChatNoteRefSchema.optional(),
+      old: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      new: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      text: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
+      title: z.string().optional(),
+      body: z.string().max(AGENT_EDIT_MAX_CHARS).optional(),
       tags: z.object({ add: z.array(z.string()), remove: z.array(z.string()) }).optional(),
       folder: z.string().optional(),
       setting: z.object({ id: z.string(), value: z.string() }).optional(),
