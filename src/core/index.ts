@@ -1634,6 +1634,8 @@ const ChatProposalBaseSchema = z.object({
   turn_id: uuid,
   reminder_id: uuid.nullable().optional(),
   expected_title: z.string().nullable(),
+  // Optional for pre-policy cached rows. SQL refuses their content writes.
+  image_check: z.string().nullable().optional(),
   state: z.enum(CHAT_PROPOSAL_STATES),
   error_token: z.string().nullable(),
   reported_turn_id: uuid.nullable(),
