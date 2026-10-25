@@ -624,3 +624,38 @@ export const AdminRequestSchema = z.union([
   AdminMailQuerySchema,
 ]);
 export type AdminRequest = z.infer<typeof AdminRequestSchema>;
+
+/* ---------- the PIN unlock (docs/contracts/analytics.md §The gate fails closed) ---------- */
+
+/**
+ * The request header every admin call carries its unlock token in.
+ *
+ * Both admin functions refuse an allowlisted caller `pin_required` without a
+ * valid one, so this name is half of the gate. `CORS_HEADERS` in
+ * `supabase/functions/_shared/auth.ts` restates it in the preflight allow-list
+ * (pinned by `supabase/tests/core-mirror.unit.test.ts`): a browser refuses to
+ * send a header the preflight did not allow.
+ */
+export const ADMIN_UNLOCK_HEADER = 'x-kinjot-admin-unlock';
+
+/**
+ * The one request that needs no unlock token: the PIN itself, sent to
+ * `admin-analytics`. It is answered before the token check and is not a
+ * member of `AdminRequestSchema`, which is what a token admits. The PIN is
+ * bounded because it is hashed, never stored.
+ */
+export const AdminUnlockRequestSchema = z.object({
+  section: z.literal('unlock'),
+  pin: z.string().min(1).max(256),
+});
+export type AdminUnlockRequest = z.infer<typeof AdminUnlockRequestSchema>;
+
+/**
+ * A correct PIN's answer: the token to send in `ADMIN_UNLOCK_HEADER`, and when
+ * it stops working (30 days after issue). The token is opaque to the client.
+ */
+export const AdminUnlockResponseSchema = z.object({
+  token: z.string().min(1).max(2048),
+  expires_at: isoInstant,
+});
+export type AdminUnlockResponse = z.infer<typeof AdminUnlockResponseSchema>;
