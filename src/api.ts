@@ -478,7 +478,7 @@ export class NotesApi {
 
   private async call<T>(
     action: string,
-    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
+    schema: z.ZodType<T>,
     params: Record<string, unknown>,
     deadlineMs = this.options.deadlineMs ?? 30_000,
   ): Promise<T> {

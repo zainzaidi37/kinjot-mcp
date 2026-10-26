@@ -12,13 +12,12 @@ import { NOTE_LABEL_PATTERN } from './note-label.js';
 
 export const NOTE_SOURCES = ['web', 'mcp', 'cli', 'vscode'] as const;
 
-const uuid = z.string().uuid();
+const uuid = z.guid();
 const timestamptz = z.string().datetime({ offset: true });
 
 /**
  * A jsonb column whose shape belongs to its writer. Deliberately not
- * `z.unknown()`: that accepts *any* value including `undefined`, which makes
- * the object key optional, so a row missing the column entirely would parse.
+ * `z.unknown()`: that accepts `undefined` as a column value.
  * A jsonb column is always present in a server row — null or a value.
  */
 const jsonbValue = z.custom<unknown>((value) => value !== undefined, {
@@ -699,7 +698,7 @@ export const TidyChangeSchema = z
     seq: z.number().int(),
     kind: z.enum(TIDY_CHANGE_KINDS),
     payload: TidyChangePayloadSchema,
-    result: z.unknown().nullable(),
+    result: z.unknown().nullable().optional(),
     reverted_at: timestamptz.nullable(),
     created_at: timestamptz,
     updated_at: timestamptz,
@@ -1992,8 +1991,8 @@ export {
 
 /** Content-free, service-only account safety records; never part of sync. */
 export const AiSafetyDeclineSchema = z.object({
-  id: z.string().uuid(),
-  user_id: z.string().uuid(),
+  id: z.guid(),
+  user_id: z.guid(),
   feature: z.enum(['recall', 'gist', 'tidy', 'chat']),
   provider: z.enum(['anthropic', 'openai']),
   category: z.string().max(64).nullable(),
@@ -2001,7 +2000,7 @@ export const AiSafetyDeclineSchema = z.object({
 });
 export type AiSafetyDecline = z.infer<typeof AiSafetyDeclineSchema>;
 export const AiPauseLiftSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   lifted_at: z.string().datetime({ offset: true }),
 });
 export type AiPauseLift = z.infer<typeof AiPauseLiftSchema>;

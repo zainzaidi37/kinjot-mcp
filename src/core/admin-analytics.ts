@@ -323,7 +323,7 @@ export type AdminUserSort = (typeof ADMIN_USER_SORTS)[number];
  * without one, and a 500 is a worse answer than a dash in a cell.
  */
 export const AdminUserRowSchema = z.object({
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   email: z.string().nullable(),
   email_confirmed_at: isoInstant.nullable(),
   created_at: isoInstant,
@@ -383,7 +383,7 @@ export type AdminUserRow = z.infer<typeof AdminUserRowSchema>;
  */
 export const AdminUsersCursorSchema = z.object({
   before: isoInstant,
-  before_id: z.string().uuid(),
+  before_id: z.guid(),
 });
 export type AdminUsersCursor = z.infer<typeof AdminUsersCursorSchema>;
 
@@ -433,7 +433,7 @@ export const AdminUsersQuerySchema = z.object({
   limit: z.number().int().min(1).max(100).optional(),
   /** Both halves of the previous page's last sort key, or neither. */
   before: isoInstant.optional(),
-  before_id: z.string().uuid().optional(),
+  before_id: z.guid().optional(),
   /** Email prefix or an exact user id. Long enough for either, bounded anyway. */
   search: z.string().max(320).optional(),
   sort: z.enum(ADMIN_USER_SORTS).optional(),
@@ -442,7 +442,7 @@ export type AdminUsersQuery = z.infer<typeof AdminUsersQuerySchema>;
 
 export const AdminUserQuerySchema = z.object({
   section: z.literal('user'),
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
 });
 export type AdminUserQuery = z.infer<typeof AdminUserQuerySchema>;
 
@@ -488,7 +488,7 @@ export type AdminAction = (typeof ADMIN_ACTIONS)[number];
  */
 export const AdminActionRequestSchema = z.object({
   action: z.enum(ADMIN_ACTIONS),
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
   confirm_email: z.string().min(1).max(320),
   reason: z.string().max(500),
 });
@@ -505,8 +505,8 @@ export type AdminActionRequest = z.infer<typeof AdminActionRequestSchema>;
  */
 export const AdminActionResponseSchema = z.object({
   ok: z.literal(true),
-  audit_id: z.string().uuid(),
-  result: z.record(z.unknown()),
+  audit_id: z.guid(),
+  result: z.record(z.string(), z.unknown()),
 });
 export type AdminActionResponse = z.infer<typeof AdminActionResponseSchema>;
 
@@ -518,14 +518,14 @@ export type AdminActionResponse = z.infer<typeof AdminActionResponseSchema>;
  * who an action was about is not a log.
  */
 export const AdminAuditRowSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   at: isoInstant,
   admin_email: z.string(),
   action: z.string(),
-  target_user_id: z.string().uuid(),
+  target_user_id: z.guid(),
   target_email: z.string(),
   reason: z.string(),
-  detail: z.record(z.unknown()),
+  detail: z.record(z.string(), z.unknown()),
 });
 export type AdminAuditRow = z.infer<typeof AdminAuditRowSchema>;
 
@@ -544,7 +544,7 @@ export type AdminAuditQuery = z.infer<typeof AdminAuditQuerySchema>;
 /** The request: one account, by id. The function resolves the address itself. */
 export const AdminMailQuerySchema = z.object({
   section: z.literal('mail'),
-  user_id: z.string().uuid(),
+  user_id: z.guid(),
 });
 export type AdminMailQuery = z.infer<typeof AdminMailQuerySchema>;
 

@@ -20,7 +20,7 @@ export const REMINDER_REFUSALS = [
   'not_due',
   'limit_reached',
 ] as const;
-const uuid = z.string().uuid();
+const uuid = z.guid();
 const instant = z.string().datetime({ offset: true });
 export const ReminderDateSchema = z.string().date();
 export const ReminderTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);

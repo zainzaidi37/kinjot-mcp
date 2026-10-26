@@ -6,7 +6,7 @@ import {
 } from './core/index.js';
 
 const uploadHeaders = z
-  .record(z.string())
+  .record(z.string(), z.string())
   .refine(
     (headers) =>
       Object.keys(headers).every((name) =>
@@ -80,7 +80,7 @@ export const wireSchemas = {
   inbox_resolve: z.object({ id: z.string(), status: z.literal('resolved') }),
   key_info: z.object({ access: z.enum(API_KEY_ACCESS_LEVELS) }),
   save_note: z.object({
-    ai_excluded: z.unknown(),
+    ai_excluded: z.unknown().optional(),
     note: z.object({ id: z.string(), title: z.string(), created_at: z.string() }),
     // The vocabulary is a hint for later tag spelling. A missing or malformed
     // hint must not turn a completed save into a parse failure.
@@ -116,7 +116,7 @@ export const wireSchemas = {
     ),
   }),
   edit_note: z.object({
-    ai_excluded: z.unknown(),
+    ai_excluded: z.unknown().optional(),
     note: z.object({
       id: z.string(),
       short_id: z.number().int().nullable().optional(),

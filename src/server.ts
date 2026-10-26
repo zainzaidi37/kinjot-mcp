@@ -77,7 +77,7 @@ const RECALL_FRESHNESS =
 const JOT_ID = 'Label (A10), 8-character id prefix or full id';
 const RESERVED_NOTICE = 'Left out the autosave tag: it is reserved for autosave sessions.';
 
-// The SDK has no switch for its draft-07 $schema or spec-default execution keys.
+// The SDK has no switch for its schema dialect marker or spec-default execution keys.
 // Install before the first registerTool, when the SDK adds its tools/list handler.
 function leanToolList(server: McpServer): void {
   const protocol = server.server;
@@ -98,7 +98,12 @@ export function leanTools(result: ListToolsResult): ListToolsResult {
   return {
     ...result,
     tools: result.tools.map(({ execution, inputSchema, ...tool }) => {
-      const schema = { ...inputSchema } as typeof inputSchema & { $schema?: string };
+      // MCP SDK 1.32.1 omits `additionalProperties` for v4 strip objects;
+      // #1607 preserves the advertised tools/list contract.
+      const schema = {
+        ...inputSchema,
+        additionalProperties: inputSchema.additionalProperties ?? false,
+      } as typeof inputSchema & { $schema?: string };
       delete schema.$schema;
       const spare = execution?.taskSupport === 'forbidden' && Object.keys(execution).length === 1;
       return { ...tool, inputSchema: schema, ...(execution && !spare ? { execution } : {}) };
