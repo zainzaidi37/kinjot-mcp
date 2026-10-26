@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 import { wireSchemas } from './wire.js';
 import type { Config } from './config.js';
@@ -65,6 +66,7 @@ export interface SaveNoteInput {
   folder?: string;
   source?: 'mcp' | 'cli';
   vocabulary?: string[];
+  vocabularyOwner?: string;
 }
 
 export interface SavedNote {
@@ -74,6 +76,7 @@ export interface SavedNote {
   created_at: string;
   tags: string[];
   existingTags?: string[];
+  vocabularyOwner?: string;
 }
 
 export interface EditNoteInput {
@@ -86,6 +89,7 @@ export interface EditNoteInput {
   folder?: string;
   source?: 'mcp' | 'cli';
   vocabulary?: string[];
+  vocabularyOwner?: string;
 }
 
 export interface AppendNoteInput {
@@ -249,6 +253,12 @@ export class NotesApi {
     private readonly options: { deadlineMs?: number } = {},
   ) {}
 
+  private vocabularyOwner(): string {
+    return createHash('sha256')
+      .update(`${this.config.apiUrl}\0${this.config.apiKey}`)
+      .digest('hex');
+  }
+
   async keyInfo(deadlineMs?: number): Promise<ApiKeyAccess> {
     const result = await this.call('key_info', wireSchemas.key_info, {}, deadlineMs);
     return result.access;
@@ -341,7 +351,9 @@ export class NotesApi {
     if (input.id !== undefined && !isUuidShapeAnyCase(input.id)) {
       throw new Error('note id must be a UUID in 8-4-4-4-12 hexadecimal form');
     }
-    const tags = input.tags ? normalizeTags(input.tags, input.vocabulary) : [];
+    const vocabularyOwner = this.vocabularyOwner();
+    const vocabulary = input.vocabularyOwner === vocabularyOwner ? input.vocabulary : undefined;
+    const tags = input.tags ? normalizeTags(input.tags, vocabulary) : [];
     const response = await this.call('save_note', wireSchemas.save_note, {
       id: input.id?.toLowerCase() ?? crypto.randomUUID(),
       title: input.title,
@@ -356,6 +368,7 @@ export class NotesApi {
       ...response.note,
       tags,
       existingTags: response.existing_tags,
+      vocabularyOwner,
       aiExcluded: response.ai_excluded === true,
     };
   }
@@ -418,13 +431,15 @@ export class NotesApi {
   async editNote(input: EditNoteInput): Promise<EditedNote & { aiExcluded: boolean }> {
     const shortId = parseNoteLabel(input.id.trim());
     const reference = shortId === null ? { id: input.id } : { short_id: shortId };
+    const vocabulary =
+      input.vocabularyOwner === this.vocabularyOwner() ? input.vocabulary : undefined;
     try {
       const result = await this.call('edit_note', wireSchemas.edit_note, {
         ...reference,
         old_string: input.old_string,
         new_string: input.new_string,
         title: input.title,
-        add_tags: input.add_tags ? normalizeTags(input.add_tags, input.vocabulary) : undefined,
+        add_tags: input.add_tags ? normalizeTags(input.add_tags, vocabulary) : undefined,
         remove_tags: input.remove_tags?.map((tag) => tag.trim().replace(/^#+/, '').toLowerCase()),
         folder: input.folder,
         source: input.source ?? 'mcp',

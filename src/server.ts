@@ -172,7 +172,7 @@ export function buildServer(
   options: ServerOptions = {},
 ): McpServer {
   const repoTag = options.repoTag === undefined ? detectRepoTag() : options.repoTag;
-  let tagVocabulary: string[] | undefined;
+  let tagVocabulary: { tags: string[]; owner: string | undefined } | undefined;
   // An unknown level leaves tool access to the server's checks.
   const canCreate = options.access !== 'read';
   const canEdit = options.access === undefined || options.access === 'full';
@@ -215,10 +215,12 @@ export function buildServer(
             tags: kept,
             folder,
             source: 'mcp',
-            vocabulary: tagVocabulary,
+            vocabulary: tagVocabulary?.tags,
+            vocabularyOwner: tagVocabulary?.owner,
           });
           const suggestedTags = note.existingTags?.filter((tag) => !isReservedTag(tag));
-          if (suggestedTags !== undefined) tagVocabulary = suggestedTags;
+          if (suggestedTags !== undefined)
+            tagVocabulary = { tags: suggestedTags, owner: note.vocabularyOwner };
           const hint =
             suggestedTags && suggestedTags.length > 0
               ? `\nThe user's existing tags include: ${suggestedTags.slice(0, 8).join(', ')} — reuse these exact names on future jots.`
@@ -495,7 +497,8 @@ export function buildServer(
             remove_tags,
             folder,
             source: 'mcp',
-            vocabulary: tagVocabulary,
+            vocabulary: tagVocabulary?.tags,
+            vocabularyOwner: tagVocabulary?.owner,
           });
           return textResult(
             `Edited ${noteHandle(note)} "${note.title}"${note.aiExcluded ? " and moved it into a No AI folder: agents can't read it back." : '.'}${dropped ? ` ${RESERVED_NOTICE}` : ''}`,

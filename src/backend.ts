@@ -102,15 +102,17 @@ export class LocalBackend implements JotBackend {
   async saveNote(input: SaveNoteInput): Promise<SavedNote> {
     const library = openLocalLibrary(this.dir);
     try {
-      return saveNoteLocally(library, {
+      const vocabularyOwner = `${library.path}\0${library.workspaceId}`;
+      const note = saveNoteLocally(library, {
         title: input.title,
         id: input.id,
         body: input.body,
         tags: input.tags,
         folder: input.folder,
         source: input.source ?? 'mcp',
-        vocabulary: input.vocabulary,
+        vocabulary: input.vocabularyOwner === vocabularyOwner ? input.vocabulary : undefined,
       });
+      return { ...note, vocabularyOwner };
     } finally {
       library.close();
     }
@@ -161,40 +163,23 @@ function inboxLocalError(): LocalUnavailableError {
  * `kinjot use account`, where the agent can relay it. A missing account key
  * likewise errors on a tool call rather than preventing server startup.
  *
- * The server caches the previous jot's tag vocabulary. After a target change,
- * using that hint would normalize local tags against account spellings or vice
- * versa. Saves record their target before calling the backend and drop the hint
- * when it differs from the previous save target. Edits drop the hint while
- * their target differs from the last save target; they return no new
- * vocabulary.
+ * `serveBackend` forwards the hint untouched: resolution precedes the write,
+ * so only `NotesApi` or `LocalBackend` knows the key or library it reaches
+ * (#1142 item 198).
  */
 export function serveBackend(
   env: Record<string, string | undefined> = process.env,
   makeApi?: (env: Record<string, string | undefined>) => NotesApi,
 ): JotBackend {
   const resolve = () => resolveBackend(env, makeApi);
-  let lastSaveTarget: string | undefined;
   return {
     uploadImage: (input) => resolve().backend.uploadImage(input),
     inboxMuteState: () => resolve().backend.inboxMuteState(),
     inboxNotify: (input) => resolve().backend.inboxNotify(input),
     inboxList: (input) => resolve().backend.inboxList(input),
     inboxResolve: (input) => resolve().backend.inboxResolve(input),
-    saveNote: (input) => {
-      const { backend, resolution } = resolve();
-      const target = resolution.mode === 'local' ? `local:${resolution.dir}` : 'account';
-      const stale = lastSaveTarget !== undefined && lastSaveTarget !== target;
-      lastSaveTarget = target;
-      return backend.saveNote(stale ? { ...input, vocabulary: undefined } : input);
-    },
-    editNote: (input) => {
-      const { backend, resolution } = resolve();
-      const target = resolution.mode === 'local' ? `local:${resolution.dir}` : 'account';
-      // Edits return no vocabulary. Drop the hint while their target differs
-      // from the last attempted save target.
-      const stale = lastSaveTarget !== undefined && lastSaveTarget !== target;
-      return backend.editNote(stale ? { ...input, vocabulary: undefined } : input);
-    },
+    saveNote: (input) => resolve().backend.saveNote(input),
+    editNote: (input) => resolve().backend.editNote(input),
     appendNote: (input) => resolve().backend.appendNote(input),
     searchNotes: (query) => resolve().backend.searchNotes(query),
     recallNotes: (query) => resolve().backend.recallNotes(query),
