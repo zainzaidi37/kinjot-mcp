@@ -1498,7 +1498,7 @@ export type ChatUsageRound = z.infer<typeof ChatUsageRoundSchema>;
 
 /**
  * A `chat_messages` row as the client can read it: every column but `wire`,
- * which `authenticated` holds no grant on. A turn row (id = turn_id) is the
+ * `folder_ids` and `tag_ids`, which `authenticated` holds no grant on. A turn row (id = turn_id) is the
  * user's own message and alone carries the turn columns; the refinement
  * mirrors `chat_messages_turn_columns`. Select the columns by name: `*` is
  * refused because of `wire`.
@@ -1547,7 +1547,7 @@ export const ChatMessageSchema = z
     }
   });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
-/** The `chat_messages` columns a client may select (all but `wire`). */
+/** The `chat_messages` columns a client may select (`ChatMessageSchema`'s). */
 export const CHAT_MESSAGE_CLIENT_COLUMNS = [
   'id',
   'thread_id',
