@@ -76,7 +76,8 @@ export const AdminAnalyticsProductSchema = z.object({
    * person signed in or had the app open, from Supabase Auth's log and
    * sessions. `acted_by_day` is product events alone. `presence_source` is
    * `sessions` when the sign-in log has no presence row in the range's last
-   * seven days — the Dashboard switch is off — so presence is latest-only.
+   * seven days (the absence alone does not show whether the Dashboard switch
+   * is off), so presence for those days is latest-only.
    */
   active: z.object({
     by_day: AdminAnalyticsDaySeriesSchema,
