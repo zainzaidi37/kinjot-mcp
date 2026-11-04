@@ -2,7 +2,7 @@
   "name": "kinjot",
   "version": "0.1.6",
   "mcpName": "io.github.zainzaidi37/kinjot",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@12.16.1",
   "description": "Jot notes from Claude Code / Codex to Kinjot — MCP server and CLI",
   "license": "MIT",
   "repository": {
