@@ -126,6 +126,58 @@ describe('buildServer', () => {
     });
   });
 
+  it('K2: a #-prefixed agent tag joins its plain spelling and edit_jot removes it by that key', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as Record<string, unknown>;
+      bodies.push(request);
+      return request.action === 'save_note'
+        ? jsonResponse(200, {
+            note: { id: 'n1', title: request.title, created_at: 'now' },
+            existing_tags: ['#infra', 'db'],
+          })
+        : jsonResponse(200, { note: { id: 'n1', short_id: 1, title: 't', updated_at: 'now' } });
+    });
+    const server = buildServer(
+      new NotesApi(
+        { apiUrl: 'https://api.example', apiKey: GOOD_KEY },
+        fetchMock as unknown as typeof fetch,
+      ),
+      '0.0.0-test',
+      { repoTag: null },
+    );
+    const tools = registeredTools(server);
+    await tools.jot!.handler({ title: 'One', body: 'b', tags: ['#Infra'] }, {});
+    await tools.jot!.handler({ title: 'Two', body: 'b', tags: ['##Infra', 'Auth Flow'] }, {});
+    await tools.edit_jot!.handler(
+      { id: 'A10', add_tags: ['#DB'], remove_tags: ['#Infra', '#Auth Flow', '# Infra'] },
+      {},
+    );
+
+    expect(
+      bodies.map(({ action, tags, add_tags, remove_tags }) => ({
+        action,
+        tags,
+        add_tags,
+        remove_tags,
+      })),
+    ).toEqual([
+      { action: 'save_note', tags: ['infra'], add_tags: undefined, remove_tags: undefined },
+      {
+        action: 'save_note',
+        tags: ['infra', 'auth-flow'],
+        add_tags: undefined,
+        remove_tags: undefined,
+      },
+      {
+        action: 'edit_note',
+        tags: undefined,
+        add_tags: ['db'],
+        remove_tags: ['infra', 'auth-flow', 'infra'],
+      },
+    ]);
+  });
+
   it('find_jots forwards the full multi-word query in the search request', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { notes: [], total: 0 }));
     const server = buildServer(

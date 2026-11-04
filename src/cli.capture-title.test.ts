@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -17,6 +17,13 @@ const STOP_HOOK = fileURLToPath(
     import.meta.url,
   ),
 );
+// The public mirror receives `packages/mcp/src` without `integrations/`
+// (`.github/workflows/sync-mcp-mirror.yml`), so this file runs only in the
+// monorepo. The gate probes the workspace root rather than `STOP_HOOK`, so a
+// moved hook still fails here instead of skipping.
+const MONOREPO = existsSync(
+  fileURLToPath(new URL('../../../pnpm-workspace.yaml', import.meta.url)),
+);
 const KEY = `kj_live_${'C'.repeat(43)}`;
 const saved = { env: { ...process.env }, stdin: Object.getOwnPropertyDescriptor(process, 'stdin') };
 let dir: string | undefined;
@@ -30,75 +37,78 @@ afterEach(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-it('saves an autosaved reply that opens with a Markdown rule through the CLI the hook calls', async () => {
-  dir = mkdtempSync(join(tmpdir(), 'kinjot-capture-title-'));
-  const record = join(dir, 'call.json');
-  const shim = join(dir, 'kinjot');
-  writeFileSync(
-    shim,
-    `#!${process.execPath}\n` +
-      `const chunks = [];\n` +
-      `process.stdin.on('data', (c) => chunks.push(c)).on('end', () => {\n` +
-      `  require('node:fs').writeFileSync(${JSON.stringify(record)}, JSON.stringify({\n` +
-      `    argv: process.argv.slice(2), stdin: Buffer.concat(chunks).toString('utf8') }));\n` +
-      `});\n`,
-  );
-  chmodSync(shim, 0o755);
-  const reply = '---\n\nThe migration landed and the backfill finished.';
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
-    KINJOT_AUTOCAPTURE: '1',
-  };
-  delete env.CLAUDE_PLUGIN_DATA;
-  const hook = spawnSync(process.execPath, [STOP_HOOK], {
-    cwd: dir,
-    env,
-    input: JSON.stringify({ last_assistant_message: reply, cwd: dir }),
-    encoding: 'utf8',
-    timeout: 10_000,
-  });
-  expect(hook.status, hook.stderr).toBe(0);
-  const call = JSON.parse(readFileSync(record, 'utf8')) as { argv: string[]; stdin: string };
+it.skipIf(!MONOREPO)(
+  'saves an autosaved reply that opens with a Markdown rule through the CLI the hook calls',
+  async () => {
+    dir = mkdtempSync(join(tmpdir(), 'kinjot-capture-title-'));
+    const record = join(dir, 'call.json');
+    const shim = join(dir, 'kinjot');
+    writeFileSync(
+      shim,
+      `#!${process.execPath}\n` +
+        `const chunks = [];\n` +
+        `process.stdin.on('data', (c) => chunks.push(c)).on('end', () => {\n` +
+        `  require('node:fs').writeFileSync(${JSON.stringify(record)}, JSON.stringify({\n` +
+        `    argv: process.argv.slice(2), stdin: Buffer.concat(chunks).toString('utf8') }));\n` +
+        `});\n`,
+    );
+    chmodSync(shim, 0o755);
+    const reply = '---\n\nThe migration landed and the backfill finished.';
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${dir}${delimiter}${process.env.PATH ?? ''}`,
+      KINJOT_AUTOCAPTURE: '1',
+    };
+    delete env.CLAUDE_PLUGIN_DATA;
+    const hook = spawnSync(process.execPath, [STOP_HOOK], {
+      cwd: dir,
+      env,
+      input: JSON.stringify({ last_assistant_message: reply, cwd: dir }),
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(hook.status, hook.stderr).toBe(0);
+    const call = JSON.parse(readFileSync(record, 'utf8')) as { argv: string[]; stdin: string };
 
-  process.env = {
-    ...saved.env,
-    KINJOT_API_KEY: KEY,
-    KINJOT_API_URL: 'https://example.test/functions/v1/mcp-api',
-    KINJOT_CONFIG_DIR: dir,
-    KINJOT_MODE: 'account',
-  };
-  Object.defineProperty(process, 'stdin', {
-    configurable: true,
-    value: Readable.from([Buffer.from(call.stdin)]),
-  });
-  const bodies: Array<{ action: string; title?: string; body?: string }> = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (_url: unknown, init: RequestInit) => {
-      const request = JSON.parse(String(init.body)) as { action: string; title?: string };
-      bodies.push(request);
-      return new Response(
-        JSON.stringify({
-          ai_excluded: false,
-          note: {
-            id: crypto.randomUUID(),
-            title: request.title,
-            created_at: '2026-10-22T00:00:00Z',
-          },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    }),
-  );
-  vi.spyOn(console, 'log').mockImplementation(() => {});
-  const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const { main } = await import('./cli.js');
-  await main(call.argv);
+    process.env = {
+      ...saved.env,
+      KINJOT_API_KEY: KEY,
+      KINJOT_API_URL: 'https://example.test/functions/v1/mcp-api',
+      KINJOT_CONFIG_DIR: dir,
+      KINJOT_MODE: 'account',
+    };
+    Object.defineProperty(process, 'stdin', {
+      configurable: true,
+      value: Readable.from([Buffer.from(call.stdin)]),
+    });
+    const bodies: Array<{ action: string; title?: string; body?: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: RequestInit) => {
+        const request = JSON.parse(String(init.body)) as { action: string; title?: string };
+        bodies.push(request);
+        return new Response(
+          JSON.stringify({
+            ai_excluded: false,
+            note: {
+              id: crypto.randomUUID(),
+              title: request.title,
+              created_at: '2026-10-22T00:00:00Z',
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { main } = await import('./cli.js');
+    await main(call.argv);
 
-  expect(errors.mock.calls).toEqual([]);
-  expect(process.exitCode ?? 0).toBe(0);
-  expect(bodies).toHaveLength(1);
-  expect(bodies[0]!.action).toBe('save_note');
-  expect(bodies[0]!.body).toContain(reply);
-});
+    expect(errors.mock.calls).toEqual([]);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.action).toBe('save_note');
+    expect(bodies[0]!.body).toContain(reply);
+  },
+);

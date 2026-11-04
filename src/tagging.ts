@@ -2,23 +2,29 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 /**
- * Default tag spelling is lowercase with whitespace collapsed to dashes, so
- * case and whitespace variants share a spelling. normalizeTags also dedupes and
- * caps the result at 5; a vocabulary hint preserves existing spellings.
+ * A tag's default spelling: trimmed, leading `#`s dropped, trimmed again,
+ * lowercase, and whitespace runs collapsed to `-`. Dropping the `#` lines this up with the
+ * web's `normalizeTagName` (`apps/web/src/data/repo.ts`) and Tidy's
+ * (`supabase/functions/_shared/tidy-tag.ts`), which store tags without a
+ * leading `#`. normalizeTags also dedupes, caps the result at 5 and prefers a
+ * vocabulary spelling, except one that starts with `#`.
  */
-function normalizeTag(tag: string): string {
-  return tag.trim().toLowerCase().replace(/\s+/g, '-');
+export function normalizeTag(tag: string): string {
+  return tag.trim().replace(/^#+/, '').trim().toLowerCase().replace(/\s+/g, '-');
 }
 
-// Mirrors Tidy's reservedTagName in supabase/functions/_shared/tidy-tag.ts;
-// the package boundary forbids importing the Edge Function helper here.
+// Tidy's `reservedTagName` (`supabase/functions/_shared/tidy-tag.ts`) plus a
+// trim after the `#` strip, so `normalizeTag(tag) === 'autosave'` exactly when
+// this is true; the package boundary forbids importing the Edge Function helper.
 export function isReservedTag(tag: string): boolean {
-  return tag.trim().replace(/^#+/, '').toLowerCase() === 'autosave';
+  return tag.trim().replace(/^#+/, '').trim().toLowerCase() === 'autosave';
 }
 
 export function normalizeTags(tags: string[], vocabulary?: string[]): string[] {
   const canonical = new Map<string, string>();
   for (const existing of vocabulary ?? []) {
+    // A stored `#name` shares its key with `name`; adopting it would keep writing the `#` spelling.
+    if (existing.trim().startsWith('#')) continue;
     const normalized = normalizeTag(existing);
     if (normalized.length > 0 && !canonical.has(normalized)) canonical.set(normalized, existing);
   }

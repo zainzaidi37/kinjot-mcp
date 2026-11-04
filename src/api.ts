@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { z } from 'zod';
 import { wireSchemas } from './wire.js';
 import type { Config } from './config.js';
-import { normalizeTags } from './tagging.js';
+import { normalizeTag, normalizeTags } from './tagging.js';
 import { parseNoteLabel } from './core/note-label.js';
 import { isUuidShapeAnyCase } from './uuid.js';
 import { noteLabelOf } from './handle.js';
@@ -440,7 +440,7 @@ export class NotesApi {
         new_string: input.new_string,
         title: input.title,
         add_tags: input.add_tags ? normalizeTags(input.add_tags, vocabulary) : undefined,
-        remove_tags: input.remove_tags?.map((tag) => tag.trim().replace(/^#+/, '').toLowerCase()),
+        remove_tags: input.remove_tags?.map((tag) => normalizeTag(tag)),
         folder: input.folder,
         source: input.source ?? 'mcp',
       });

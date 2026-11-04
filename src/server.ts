@@ -14,7 +14,7 @@ import {
 } from './api.js';
 import { resolveBackend } from './backend.js';
 import type { JotBackend } from './backend.js';
-import { detectRepoTag, isReservedTag } from './tagging.js';
+import { detectRepoTag, isReservedTag, normalizeTag, normalizeTags } from './tagging.js';
 import { noteHandle, noteLabelOf } from './handle.js';
 import { isAbsolute } from 'node:path';
 import type { ApiKeyAccess } from './core/index.js';
@@ -221,9 +221,13 @@ export function buildServer(
           const suggestedTags = note.existingTags?.filter((tag) => !isReservedTag(tag));
           if (suggestedTags !== undefined)
             tagVocabulary = { tags: suggestedTags, owner: note.vocabularyOwner };
+          // The spelling `normalizeTags` would send for each tag: a `#` spelling is never adopted.
+          const hintTags = [
+            ...new Set((suggestedTags ?? []).flatMap((tag) => normalizeTags([tag], suggestedTags))),
+          ];
           const hint =
-            suggestedTags && suggestedTags.length > 0
-              ? `\nThe user's existing tags include: ${suggestedTags.slice(0, 8).join(', ')} — reuse these exact names on future jots.`
+            hintTags.length > 0
+              ? `\nThe user's existing tags include: ${hintTags.slice(0, 8).join(', ')} — reuse these exact names on future jots.`
               : '';
           const dropped = kept.length < requested.length ? ` ${RESERVED_NOTICE}` : '';
           return textResult(
@@ -484,8 +488,8 @@ export function buildServer(
             new_string === undefined &&
             title === undefined &&
             folder === undefined &&
-            !addTags?.some((tag) => tag.trim()) &&
-            !remove_tags?.some((tag) => tag.trim().replace(/^#+/, ''));
+            !addTags?.some((tag) => normalizeTag(tag)) &&
+            !remove_tags?.some((tag) => normalizeTag(tag));
           if (dropped && nothingElse)
             throw new Error('Nothing changed: the autosave tag is reserved for autosave sessions.');
           const note = await api.editNote({
