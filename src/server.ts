@@ -98,7 +98,7 @@ export function leanTools(result: ListToolsResult): ListToolsResult {
   return {
     ...result,
     tools: result.tools.map(({ execution, inputSchema, ...tool }) => {
-      // MCP SDK 1.32.1 omits `additionalProperties` for v4 strip objects;
+      // MCP SDK 1.32.2 omits `additionalProperties` for v4 strip objects;
       // #1607 preserves the advertised tools/list contract.
       const schema = {
         ...inputSchema,
