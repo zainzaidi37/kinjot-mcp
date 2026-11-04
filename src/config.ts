@@ -5,6 +5,7 @@
 // Supabase service-role key must never appear anywhere in this package.
 
 import { configDir, configFilePath, loadStoredConfig } from './configFile.js';
+import { API_KEY_PATTERN } from './core/index.js';
 
 const LEGACY_DEFAULT_API_URL = 'https://opzbxxrjiiktduivkdwm.supabase.co/functions/v1/mcp-api';
 
@@ -17,7 +18,7 @@ export function normalizeDefaultApiUrl(url: string): string {
   return url === LEGACY_DEFAULT_API_URL ? DEFAULT_API_URL : url;
 }
 
-export const API_KEY_PATTERN = /^kj_live_[A-Za-z0-9]{43}$/;
+export { API_KEY_PATTERN };
 
 export interface Config {
   apiUrl: string;

@@ -1,5 +1,3 @@
-// Imported from the standalone module, never `./core/index.js`: the index would
-// pull the whole vendored core plus zod into every MCP server start.
 import { noteLabel } from './core/note-label.js';
 
 /**

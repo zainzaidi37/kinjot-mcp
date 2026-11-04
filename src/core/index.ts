@@ -239,13 +239,14 @@ export type ApiKeyPublic = z.infer<typeof ApiKeyPublicSchema>;
 // stored prefix is the first 16 characters, enough to recognize a key without
 // revealing it.
 //
-// THIS declaration is the source. The web app (generation) imports it, but the
-// other two runtimes cannot and hold hand-written copies instead: the Edge
-// Function's `KEY_PATTERN` (supabase/functions/mcp-api/index.ts — the Deno/npm
-// boundary) and the CLI's (packages/mcp/src/config.ts — loading the vendored
-// core would drag zod into every MCP server start). Both copies are pinned back
-// to this one by `.source` equality: supabase/tests/core-mirror.unit.test.ts
-// and packages/mcp/src/index.test.ts.
+// This declaration is the source. The web app generates keys with
+// `generateApiKey` (`apps/web/src/data/api-keys-repo.ts`); it does not import
+// the pattern. The CLI reads the
+// generated vendored copy (`packages/mcp/src/core/index.ts`), re-exported by
+// `packages/mcp/src/config.ts`. The Edge Function cannot import it (the
+// Deno/npm boundary), so its `KEY_PATTERN` (`supabase/functions/mcp-api/index.ts`)
+// is the one hand-written copy, pinned to this one by `.source`/`.flags`
+// equality in `supabase/tests/core-mirror.unit.test.ts`.
 export const API_KEY_PATTERN = /^kj_live_[A-Za-z0-9]{43}$/;
 export const API_KEY_PREFIX_LENGTH = 16;
 
@@ -510,13 +511,22 @@ export const TidyClarifyScopeSchema = z.object({
 });
 export type TidyClarifyScope = z.infer<typeof TidyClarifyScopeSchema>;
 
+/** Each question offers two to four choices: contract, not taste
+ * (`plans/tidy-titles-and-clarification.md` §Product contract). `MAX_OPTIONS`
+ * in `supabase/functions/_shared/tidy-clarify.ts` is the Edge copy, and only
+ * `parseClarifyPause` enforces it, on a stored pause. Generation stays within
+ * four by construction: at most `MAX_LISTED_CANDIDATES` names plus one "All of
+ * them", "Both" only for exactly two names, and fixed menus of two. Lowering
+ * both copies does not shrink what generation emits. */
+export const MAX_TIDY_CLARIFY_OPTIONS = 4;
+
 export const TidyClarifyQuestionSchema = z.object({
   id: z.string().min(1),
   prompt: z.string(),
   options: z
     .array(z.object({ id: z.string().min(1), label: z.string(), scope: TidyClarifyScopeSchema }))
     .min(2)
-    .max(4)
+    .max(MAX_TIDY_CLARIFY_OPTIONS)
     // Option ids are the card's selection keys, React keys and radio `value`s
     // all at once, so two options sharing one id would silently answer as a
     // single option. The server's generator already threads unique ids; this is
