@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
-  API_KEY_ACCESS_LEVELS,
   ATTACHMENT_UPLOAD_HEADER_NAMES,
+  EXTENSION_RESPONSE_SCHEMAS,
   UploadedAttachmentSchema,
 } from './core/index.js';
 
@@ -32,14 +32,9 @@ export const imageUploadGrantSchema = z.object({
 
 // Public mcp-api envelopes, deliberately looser than database row schemas:
 // ids/timestamps/source are strings and additive server fields are tolerated.
-const searchHit = z.object({
-  id: z.string(),
-  short_id: z.number().int().nullable().optional(),
-  title: z.string(),
-  tags: z.array(z.string()),
-  updated_at: z.string(),
-  gist: z.string().nullable().optional(),
-});
+// The actions the browser extension shares are defined once, in core's
+// `extension-wire.ts` (`EXTENSION_RESPONSE_SCHEMAS`).
+const shared = EXTENSION_RESPONSE_SCHEMAS;
 
 export const wireSchemas = {
   image_upload: imageUploadGrantSchema,
@@ -52,41 +47,11 @@ export const wireSchemas = {
     key_muted: z.boolean(),
     truncated: z.array(z.string()),
   }),
-  inbox_list: z.object({
-    items: z.array(
-      z.object({
-        id: z.string(),
-        kind: z.string(),
-        title: z.string(),
-        detail: z.string().nullable(),
-        context: z
-          .object({
-            agent: z.string().optional(),
-            repo: z.string().optional(),
-            branch: z.string().optional(),
-            prs: z.array(z.string()).optional(),
-            note: z.string().optional(),
-            session_id: z.string().optional(),
-          })
-          .passthrough(),
-        repeat_count: z.number(),
-        created_at: z.string(),
-        surfaced_at: z.string(),
-        key_name: z.string().nullable(),
-      }),
-    ),
-    other_open: z.number(),
-  }),
+  inbox_list: shared.inbox_list,
   inbox_resolve: z.object({ id: z.string(), status: z.literal('resolved') }),
-  key_info: z.object({ access: z.enum(API_KEY_ACCESS_LEVELS) }),
-  save_note: z.object({
-    ai_excluded: z.unknown().optional(),
-    note: z.object({ id: z.string(), title: z.string(), created_at: z.string() }),
-    // The vocabulary is a hint for later tag spelling. A missing or malformed
-    // hint must not turn a completed save into a parse failure.
-    existing_tags: z.array(z.string()).optional().catch(undefined),
-  }),
-  list_recent_notes: z.object({ notes: z.array(searchHit) }),
+  key_info: shared.key_info,
+  save_note: shared.save_note,
+  list_recent_notes: shared.list_recent_notes,
   list_open_tasks: z.object({
     notes: z.array(
       z.object({
@@ -102,19 +67,8 @@ export const wireSchemas = {
     scanned: z.number(),
     truncated: z.boolean(),
   }),
-  search_notes: z.object({ notes: z.array(searchHit), total: z.number() }),
-  recall: z.object({
-    matches: z.array(
-      z.object({
-        id: z.string(),
-        short_id: z.number().int().nullable().optional(),
-        title: z.string(),
-        gist: z.string().nullable(),
-        similarity: z.number(),
-        passage: z.string().nullable().optional(),
-      }),
-    ),
-  }),
+  search_notes: shared.search_notes,
+  recall: shared.recall,
   edit_note: z.object({
     ai_excluded: z.unknown().optional(),
     note: z.object({
@@ -124,26 +78,6 @@ export const wireSchemas = {
       updated_at: z.string(),
     }),
   }),
-  append_note: z.object({
-    snapshot_skipped: z.literal(true).optional().catch(undefined),
-    note: z.object({
-      id: z.string(),
-      short_id: z.number().int().nullable().optional(),
-      title: z.string(),
-      updated_at: z.string(),
-    }),
-  }),
-  get_note: z.object({
-    note: z.object({
-      id: z.string(),
-      short_id: z.number().int().nullable().optional(),
-      title: z.string(),
-      body: z.string(),
-      folder_id: z.string().nullable(),
-      source: z.string(),
-      created_at: z.string(),
-      updated_at: z.string(),
-      tags: z.array(z.string()),
-    }),
-  }),
+  append_note: shared.append_note,
+  get_note: shared.get_note,
 };

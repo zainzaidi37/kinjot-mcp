@@ -223,6 +223,7 @@ const API_ERROR_KINDS = [
   'inbox_item_not_found',
   'inbox_ambiguous_id',
   'id_conflict',
+  'note_id_conflict',
   'invalid_id',
   'invalid_kind',
   'invalid_source',

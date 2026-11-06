@@ -5,13 +5,15 @@
 // Supabase service-role key must never appear anywhere in this package.
 
 import { configDir, configFilePath, loadStoredConfig } from './configFile.js';
-import { API_KEY_PATTERN } from './core/index.js';
+import { API_KEY_PATTERN, EXTENSION_API_URL } from './core/index.js';
 
 const LEGACY_DEFAULT_API_URL = 'https://opzbxxrjiiktduivkdwm.supabase.co/functions/v1/mcp-api';
 
 // Hosted Edge Functions run beside the us-east-1 database (CLAUDE.md). The
-// region is selected by query parameter; custom endpoints keep their URL.
-export const DEFAULT_API_URL = `${LEGACY_DEFAULT_API_URL}?forceFunctionRegion=us-east-1`;
+// region is selected by query parameter; custom endpoints keep their URL. The
+// value is defined once, as core's `EXTENSION_API_URL` (vendored), which the
+// browser extension uses too.
+export const DEFAULT_API_URL = EXTENSION_API_URL;
 
 /** Old saved/default endpoints still mean production, including in CLI setup. */
 export function normalizeDefaultApiUrl(url: string): string {

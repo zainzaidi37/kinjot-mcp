@@ -101,7 +101,8 @@ account. It needs the desktop app (which creates that library), and only
 \`kinjot add\` and the MCP jot tool work there — search, recall, get, recent, tasks
 and Inbox live in the app.
 
-Exit codes: 0 done; 1 ambiguous request failure (network, timeout, 5xx, 401, 429);
+Exit codes: 0 done; 1 ambiguous request failure (network, timeout, 5xx, 401, 429,
+a repeated --id: note_id_conflict);
 2 usage or definite Inbox refusal; 3 note or Inbox item not found;
 4 unavailable for this library, old backend, or key access; 5 append done but a history copy was
 kept despite --no-snapshot.
@@ -110,6 +111,9 @@ kept despite --no-snapshot.
 class UsageError extends Error {}
 
 const VALUELESS_FLAGS = new Set(['--no-snapshot', '--json', '--all', '--no-cache', '--input-json']);
+// `note_id_conflict` (a repeated `kinjot add --id`) stays out, so it exits 1:
+// `integrations/shared/capture-support.mjs#addNote` and its session capture
+// read exit 1, never 2, as a save that may have landed and read the note back.
 const DEFINITE_INBOX_REFUSALS: ReadonlySet<ApiErrorKind> = new Set([
   'invalid_id',
   'invalid_kind',

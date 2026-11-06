@@ -5,6 +5,7 @@
 // Edit the source module and re-run; CI fails on any difference.
 
 import { z } from 'zod';
+import { API_KEY_ACCESS_LEVELS } from './api-key.js';
 import { NOTE_LABEL_PATTERN } from './note-label.js';
 
 // Canonical data model. Postgres timestamps are ISO-8601 strings; `updated_at`
@@ -213,9 +214,10 @@ export type ExportManifest = ExportManifestV2;
 // API keys for MCP/CLI access. The full key is shown once at creation; only
 // its SHA-256 hex digest is stored. Column grants hide key_hash from clients,
 // so reads use ApiKeyPublicSchema; the full schema exists for the Edge
-// Function and for the one insert that stores the hash.
-export const API_KEY_ACCESS_LEVELS = ['read', 'read_create', 'full'] as const;
-export type ApiKeyAccess = (typeof API_KEY_ACCESS_LEVELS)[number];
+// Function and for the one insert that stores the hash. The access levels and
+// the key format live in `./api-key`, a leaf the extension modules import
+// without a cycle through this barrel.
+export { API_KEY_ACCESS_LEVELS, API_KEY_PATTERN, type ApiKeyAccess } from './api-key.js';
 
 export const ApiKeySchema = z.object({
   id: uuid,
@@ -235,19 +237,8 @@ export type ApiKey = z.infer<typeof ApiKeySchema>;
 export const ApiKeyPublicSchema = ApiKeySchema.omit({ key_hash: true });
 export type ApiKeyPublic = z.infer<typeof ApiKeyPublicSchema>;
 
-// API key format. A key is "kj_live_" + 43 base62 characters (~256 bits); the
-// stored prefix is the first 16 characters, enough to recognize a key without
-// revealing it.
-//
-// This declaration is the source. The web app generates keys with
-// `generateApiKey` (`apps/web/src/data/api-keys-repo.ts`); it does not import
-// the pattern. The CLI reads the
-// generated vendored copy (`packages/mcp/src/core/index.ts`), re-exported by
-// `packages/mcp/src/config.ts`. The Edge Function cannot import it (the
-// Deno/npm boundary), so its `KEY_PATTERN` (`supabase/functions/mcp-api/index.ts`)
-// is the one hand-written copy, pinned to this one by `.source`/`.flags`
-// equality in `supabase/tests/core-mirror.unit.test.ts`.
-export const API_KEY_PATTERN = /^kj_live_[A-Za-z0-9]{43}$/;
+// The stored prefix is the first 16 characters of the key (`./api-key`),
+// enough to recognize a key without revealing it.
 export const API_KEY_PREFIX_LENGTH = 16;
 
 const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -1872,6 +1863,27 @@ export * from './save-note.js';
 export * from './admin-analytics.js';
 
 export * from './reminders.js';
+
+/**
+ * The browser extension's pairing envelope and its `mcp-api` wire shapes
+ * (`plans/browser-extension-2026-11-03.md` §3.5). Barrel-reachable for the
+ * connect page and the extension; `packages/mcp/src/wire.ts` and
+ * `packages/mcp/src/config.ts` read the vendored copy, so the CLI and the
+ * extension share one schema per action and one hosted URL.
+ */
+export * from './extension-connect.js';
+export * from './extension-wire.js';
+
+/**
+ * Capture helpers shared by `packages/mcp` (through its vendored copy), the
+ * browser extension and, for `secret-scrub` and `tags`, the Edge Functions
+ * (through `packages/core/scripts/emit-edge-core.mjs`, which needs them
+ * import-free). `capture-url` imports `extension-wire` and `secret-scrub`.
+ */
+export * from './secret-scrub.js';
+export * from './tags.js';
+export * from './capture-text.js';
+export * from './capture-url.js';
 
 export {
   aiExcludedFolderIds,
