@@ -209,12 +209,12 @@ function webhookHead(head: string): string | undefined {
 function scrubParameters(rest: string, depth: number): { text: string; redacted: number } {
   let redacted = 0;
   const out: string[] = [];
-  for (const chunk of rest.split(/(?=[&#])/)) {
+  for (const chunk of rest.split(/(?=[&#]|\\u0026)/)) {
     let offset = 0;
     for (const piece of chunk.split(/(?=[?;])/)) {
       const start = offset;
       offset += piece.length;
-      const lead = /^[?&#;]/.test(piece) ? piece[0]! : '';
+      const lead = /^(?:[?&#;]|\\u0026)/.exec(piece)?.[0] ?? '';
       const equals = piece.indexOf('=');
       if (equals < 0) {
         out.push(piece);

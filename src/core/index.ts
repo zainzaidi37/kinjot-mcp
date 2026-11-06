@@ -12,6 +12,11 @@ import { NOTE_LABEL_PATTERN } from './note-label.js';
 // on server rows is set by a Postgres trigger (CLAUDE.md).
 
 export const NOTE_SOURCES = ['web', 'mcp', 'cli', 'vscode'] as const;
+export type KnownNoteSource = (typeof NOTE_SOURCES)[number];
+
+export function isKnownNoteSource(source: unknown): source is KnownNoteSource {
+  return NOTE_SOURCES.some((known) => known === source);
+}
 
 const uuid = z.guid();
 const timestamptz = z.string().datetime({ offset: true });
@@ -55,7 +60,7 @@ export const NoteSchema = z.object({
   body: z.string(),
   folder_id: uuid.nullable(),
   trashed_from_folder_id: uuid.nullable().default(null),
-  source: z.enum(NOTE_SOURCES),
+  source: z.string().min(1),
   /**
    * A note holds at most one pin, scoped to exactly one view: All Notes
    * (`pinned_in` null) or a single folder (`pinned_in` = that folder's id).
@@ -112,7 +117,7 @@ export type Tag = z.infer<typeof TagSchema>;
 
 export const EXPORT_FORMAT_VERSION = 2;
 
-// V1 is frozen because real export files on users' disks are validated against it.
+// `ExportManifestV1Schema` must keep accepting every file a V1 export wrote.
 export const ExportManifestV1Schema = z
   .object({
     formatVersion: z.number().int().positive(),
@@ -814,7 +819,7 @@ export const InboxItemSchema = z.object({
   id: uuid,
   user_id: uuid,
   api_key_id: uuid,
-  source: z.enum(['mcp', 'cli']),
+  source: z.string().min(1),
   kind: z.enum(INBOX_KINDS),
   title: codePointLength(1, INBOX_TITLE_LIMIT),
   detail: codePointLength(1, INBOX_DETAIL_LIMIT).nullable(),
