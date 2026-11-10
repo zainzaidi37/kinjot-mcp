@@ -133,10 +133,9 @@ export interface SqliteIndex {
    * indexed here can be unqueryable there, which is precisely the engine
    * divergence {@link LOCAL_STORE_INDEXED_COLUMNS} exists to prevent.
    *
-   * Set from the Dexie declarations in `apps/web/src/data/db.ts`, which this
-   * package cannot import; a test in `apps/web` runs a real `listBy` for every
-   * column the list admits, so a wrong flag fails there rather than on a user's
-   * desktop.
+   * Must match the Dexie declarations in `apps/web/src/data/db.ts`, which this
+   * package cannot import. A compound-only index cannot admit its leftmost
+   * column to cross-engine indexed reads.
    */
   readonly dexieCompoundOnly?: true;
 }
