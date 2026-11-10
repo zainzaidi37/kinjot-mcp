@@ -13,7 +13,7 @@ tagged and searchable.
 ## Quick start
 
 1. Sign up at [kinjot.com](https://kinjot.com) (free) and confirm your email.
-2. Open **Settings > API keys** and create a key.
+2. Open **Settings > Agent connections** and create a key.
 3. Install the CLI and save your key:
 
    ```bash

@@ -537,7 +537,7 @@ export class NotesApi {
         if (response.status === 401) {
           throw new ApiError(
             401,
-            'API key was rejected — it may have been revoked. Create a new one in Settings → API keys.',
+            'API key was rejected — it may have been revoked. Create a new one in Settings → Agent connections.',
             knownKind,
           );
         }

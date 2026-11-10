@@ -87,8 +87,8 @@ Usage:
 Search, recall, recent and tasks leave out notes tagged autosave; get reads one by label.
 
 Environment:
-  KINJOT_API_KEY   API key from the web app (Settings → API keys); overrides
-                   any key stored by \`kinjot key\`
+  KINJOT_API_KEY   API key from the web app (Settings → Agent connections);
+                   overrides any key stored by \`kinjot key\`
   KINJOT_API_URL   override the API endpoint (defaults to production)
   KINJOT_MODE      local|account for a single command; overrides \`kinjot use\`
 
@@ -281,7 +281,7 @@ async function runInit(flags: Map<string, string>, env: NodeJS.ProcessEnv): Prom
   if (!API_KEY_PATTERN.test(key)) {
     throw new Error(
       key === ''
-        ? 'pass your API key: npx kinjot init --key kj_live_... (create one in Settings → API keys)'
+        ? 'pass your API key: npx kinjot init --key kj_live_... (create one in Settings → Agent connections)'
         : 'that key does not look like a Kinjot key (expected kj_live_ + 43 characters)',
     );
   }

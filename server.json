@@ -18,7 +18,7 @@
       "environmentVariables": [
         {
           "name": "KINJOT_API_KEY",
-          "description": "Account API key from kinjot.com Settings > API keys. Omit if stored with kinjot key or using desktop local capture.",
+          "description": "Account API key from kinjot.com Settings > Agent connections. Omit if stored with kinjot key or using desktop local capture.",
           "format": "string",
           "isSecret": true,
           "isRequired": false
