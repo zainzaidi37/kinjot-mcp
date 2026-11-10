@@ -199,15 +199,20 @@ a path is used as given. Setup stops before sending the key if the project is
 empty or invalid. Once the key checks out, the endpoint is saved with the key
 and the client setup is printed.
 
-For scripts or a custom API path, pass the endpoint yourself. The flag beats
-`KINJOT_API_URL`, and the printed configs keep the endpoint you chose:
+For scripts or a custom API path, pass the endpoint yourself, and the printed
+configs keep the endpoint you chose. `init` and `key` take a custom endpoint
+only from `--api-url`: with `KINJOT_API_URL` set to another endpoint and no
+flag, they refuse before sending the key anywhere.
 
 ```bash
 npx kinjot init --api-url https://your-project.supabase.co/functions/v1/mcp-api --key kj_live_your_key
 ```
 
 `init --key` only prints. `init-selfhost` and `kinjot key --api-url <url>` save
-the endpoint beside the key, so later commands need no environment variable.
+the endpoint beside the key, so later commands need no environment variable. A
+saved key is only ever sent to the endpoint it was saved with: a
+`KINJOT_API_URL` that names a different endpoint is refused, with an error
+naming both, rather than used.
 
 ### Local mode (desktop app)
 
@@ -233,8 +238,13 @@ kinjot where          # show where jots go, and why
   `kinjot key`, which suits CI and containers, where nothing should be written
   to disk.
 - `KINJOT_API_URL`: an API endpoint for local development or self-hosting.
-  - A saved key keeps its saved endpoint when this is unset.
+  - A saved key keeps its saved endpoint (the hosted default for `kinjot key`
+    without `--api-url`). When this is set and names a different endpoint, the
+    saved key is refused, not redirected.
   - `KINJOT_API_KEY` uses this or the hosted default, never a saved endpoint.
+  - `init-selfhost` reads it as your project's endpoint. `kinjot key` and
+    `kinjot init` never send a key to it: set to anything but the hosted
+    default without `--api-url`, they refuse and send nothing.
 - `KINJOT_CONFIG_DIR`: where `kinjot key` saves its config (default
   `~/.kinjot`). The desktop app reads this variable from its own environment,
   and an app started from the Start menu or a shortcut doesn't see one you

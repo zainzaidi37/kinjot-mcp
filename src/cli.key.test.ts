@@ -75,8 +75,13 @@ describe('runKey', () => {
       'API key access: Read and create — can read and create notes; edits, appends and session autosave need a full-access key.',
     );
     expect(stdout.all()).toContain('mcpServers');
-    expect(stdout.all()).toContain('claude mcp add kinjot -- npx -y kinjot');
-    expect(stdout.all()).toContain('codex mcp add kinjot -- npx -y kinjot');
+    // The key was saved under KINJOT_CONFIG_DIR, so the server must read it there.
+    expect(stdout.all()).toContain(
+      `claude mcp add kinjot -e KINJOT_CONFIG_DIR='${dir}' -- npx -y kinjot`,
+    );
+    expect(stdout.all()).toContain(
+      `codex mcp add kinjot --env KINJOT_CONFIG_DIR='${dir}' -- npx -y kinjot`,
+    );
     // The one-line commands come first; the JSON is the fallback for other clients.
     const output = stdout.all();
     expect(output.indexOf('claude mcp add')).toBeLessThan(output.indexOf('codex mcp add'));

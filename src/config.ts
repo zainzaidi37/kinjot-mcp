@@ -65,8 +65,23 @@ export function resolveConfig(
       `The key stored in ${configFilePath(configDir(env))} does not look like a Kinjot key. Run \`kinjot key\` to set a new one.`,
     );
   }
-  return {
-    apiUrl: normalizeDefaultApiUrl(explicitApiUrl ?? stored.apiUrl ?? DEFAULT_API_URL),
-    apiKey: stored.apiKey,
-  };
+  // A stored key belongs to the endpoint stored with it: a version-2 pair's
+  // `apiUrl`, or `DEFAULT_API_URL` for a version-1 hosted key
+  // (`saveStoredKey`). An environment URL must not redirect it (#1883): a
+  // self-host `KINJOT_API_URL` left in an MCP client's env would otherwise send
+  // a later hosted key to the self-host operator. A version-1 key beside a
+  // custom URL (a BYO key saved before version 2 existed) looks the same as
+  // that state, so it is refused too.
+  const storedApiUrl = normalizeDefaultApiUrl(stored.apiUrl ?? DEFAULT_API_URL);
+  if (explicitApiUrl !== undefined && normalizeDefaultApiUrl(explicitApiUrl) !== storedApiUrl) {
+    throw new Error(
+      `KINJOT_API_URL (${explicitApiUrl}) differs from the endpoint saved with the key in ` +
+        `${configFilePath(configDir(env))} (${storedApiUrl}). A saved key is only ever sent to ` +
+        'the endpoint it was saved with, so nothing was sent. Either save the key and this ' +
+        'endpoint together again (`kinjot init-selfhost`, or `kinjot key --api-url <url>`), ' +
+        'or set KINJOT_API_KEY beside KINJOT_API_URL so both come from the environment ' +
+        '(or unset KINJOT_API_URL to use the saved endpoint).',
+    );
+  }
+  return { apiUrl: storedApiUrl, apiKey: stored.apiKey };
 }

@@ -89,12 +89,15 @@ Search, recall, recent and tasks leave out notes tagged autosave; get reads one 
 Environment:
   KINJOT_API_KEY   API key from the web app (Settings → Agent connections);
                    overrides any key stored by \`kinjot key\`
-  KINJOT_API_URL   override the API endpoint (defaults to production)
+  KINJOT_API_URL   the API endpoint paired with KINJOT_API_KEY (defaults to
+                   production); init-selfhost reads it as your project's
+                   endpoint; key and init refuse it unless --api-url is passed
   KINJOT_MODE      local|account for a single command; overrides \`kinjot use\`
 
 A key stored by \`kinjot key\` lives in ~/.kinjot/config.json (or
 KINJOT_CONFIG_DIR if set) and is used automatically when KINJOT_API_KEY is
-unset.
+unset. A saved key is only ever sent to the endpoint it was saved with: a
+KINJOT_API_URL that names a different endpoint is refused, not used.
 
 Local mode writes to the Kinjot desktop app's local library instead of your
 account. It needs the desktop app (which creates that library), and only
@@ -165,6 +168,32 @@ function selectedApiUrl(flags: ReadonlyMap<string, string>, env: NodeJS.ProcessE
     apiUrlFlag === undefined ? env.KINJOT_API_URL?.trim() || DEFAULT_API_URL : apiUrlFlag.trim();
   if (apiUrl === '') throw new Error('--api-url needs a non-empty URL');
   return normalizeDefaultApiUrl(apiUrl);
+}
+
+/**
+ * The endpoint `kinjot key` and `kinjot init` send a pasted key to: `--api-url`,
+ * or `DEFAULT_API_URL`. A `KINJOT_API_URL` left in the shell by a self-host
+ * setup must not choose it, or a hosted key would be sent to that operator and
+ * saved as a pair with its endpoint, which `resolveConfig` then accepts (#1883).
+ * So a non-default one without `--api-url` is refused before any request.
+ */
+function pastedKeyApiUrl(
+  command: 'key' | 'init',
+  flags: ReadonlyMap<string, string>,
+  env: NodeJS.ProcessEnv,
+): string {
+  if (flags.has('api-url')) return selectedApiUrl(flags, env);
+  const envApiUrl = env.KINJOT_API_URL?.trim() || undefined;
+  if (envApiUrl !== undefined && normalizeDefaultApiUrl(envApiUrl) !== DEFAULT_API_URL) {
+    throw new Error(
+      `KINJOT_API_URL (${envApiUrl}) is set in your environment, but \`kinjot ${command}\` ` +
+        'only sends a key to an endpoint named with --api-url, so nothing was sent' +
+        (command === 'key' ? ' or saved' : '') +
+        '. Either pass `--api-url <url>` (or run `kinjot init-selfhost`) to save a key for ' +
+        'that endpoint, or unset KINJOT_API_URL to save a hosted key.',
+    );
+  }
+  return DEFAULT_API_URL;
 }
 
 const MCP_API_PATH = '/functions/v1/mcp-api';
@@ -285,7 +314,7 @@ async function runInit(flags: Map<string, string>, env: NodeJS.ProcessEnv): Prom
         : 'that key does not look like a Kinjot key (expected kj_live_ + 43 characters)',
     );
   }
-  const apiUrl = selectedApiUrl(flags, env);
+  const apiUrl = pastedKeyApiUrl('init', flags, env);
   const api = new NotesApi({ apiUrl, apiKey: key });
 
   process.stdout.write('Checking the key against the API… ');
@@ -496,13 +525,13 @@ export async function runInitSelfHost(deps: RunSelfHostDeps = {}): Promise<void>
   stdout.write('Saved — Kinjot will use this self-hosted project automatically.\n\n');
   if (env.KINJOT_API_KEY?.trim() || env.KINJOT_API_URL?.trim()) {
     (deps.stderr ?? process.stderr).write(
-      'warning: KINJOT_API_KEY or KINJOT_API_URL is set in your environment; environment values override the saved self-host configuration.\n',
+      'warning: KINJOT_API_KEY or KINJOT_API_URL is set in your environment; KINJOT_API_KEY overrides the saved self-host key and endpoint, and a KINJOT_API_URL that differs from the saved endpoint is refused.\n',
     );
   }
   stdout.write(
     'The key is saved on this machine and the MCP server reads it here; for a client on another machine, run npx kinjot init-selfhost there.\n\n',
   );
-  printStoredMcpSetup(stdout, { apiUrl, configDir: env.KINJOT_CONFIG_DIR?.trim() || undefined });
+  printStoredMcpSetup(stdout, { configDir: env.KINJOT_CONFIG_DIR?.trim() || undefined });
 }
 
 /**
@@ -608,13 +637,14 @@ export interface RunKeyDeps {
 
 /**
  * The MCP client setup for an account saved on this machine: none of it carries
- * the key, because the server reads the saved account. The server finds it
+ * the key or the endpoint, because the server reads the saved pair, and
+ * `resolveConfig` refuses a `KINJOT_API_URL` that differs from the saved
+ * endpoint (#1883). The server finds it
  * through `configDir()`, so a `KINJOT_CONFIG_DIR` that moved the saved account
  * has to travel with the command, or the server would read `~/.kinjot` instead.
  */
-export function storedMcpSetupText(setup: { apiUrl?: string; configDir?: string }): string {
+export function storedMcpSetupText(setup: { configDir?: string }): string {
   const vars: Array<[string, string]> = [];
-  if (setup.apiUrl !== undefined) vars.push(['KINJOT_API_URL', setup.apiUrl]);
   if (setup.configDir !== undefined) vars.push(['KINJOT_CONFIG_DIR', setup.configDir]);
   const claudeEnv = vars.map(([name, value]) => ` -e ${name}=${shellQuote(value)}`).join('');
   const codexEnv = vars.map(([name, value]) => ` --env ${name}=${shellQuote(value)}`).join('');
@@ -635,7 +665,7 @@ export function storedMcpSetupText(setup: { apiUrl?: string; configDir?: string 
 
 function printStoredMcpSetup(
   stdout: { write: (chunk: string) => unknown },
-  setup: { apiUrl?: string; configDir?: string },
+  setup: { configDir?: string },
 ): void {
   stdout.write(storedMcpSetupText(setup));
 }
@@ -658,6 +688,7 @@ export async function runKey(deps: RunKeyDeps = {}): Promise<void> {
     });
 
   rejectUnknownFlags(deps.flags ?? new Map(), ['api-url']);
+  const apiUrl = pastedKeyApiUrl('key', deps.flags ?? new Map(), env);
   const key = await readHidden();
   if (!API_KEY_PATTERN.test(key)) {
     throw new Error(
@@ -665,7 +696,6 @@ export async function runKey(deps: RunKeyDeps = {}): Promise<void> {
     );
   }
 
-  const apiUrl = selectedApiUrl(deps.flags ?? new Map(), env);
   const api = new NotesApi({ apiUrl, apiKey: key });
 
   stdout.write('Checking the key against the API… ');
@@ -687,7 +717,7 @@ export async function runKey(deps: RunKeyDeps = {}): Promise<void> {
       ? 'Saved — Kinjot will use this key automatically from now on, no env var needed.\n\n'
       : 'Saved — Kinjot will use this key and custom endpoint automatically.\n\n',
   );
-  printStoredMcpSetup(stdout, { apiUrl: apiUrl === DEFAULT_API_URL ? undefined : apiUrl });
+  printStoredMcpSetup(stdout, { configDir: env.KINJOT_CONFIG_DIR?.trim() || undefined });
 }
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
