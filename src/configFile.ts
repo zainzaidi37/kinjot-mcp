@@ -187,19 +187,3 @@ export function loadStoredConfig(
 
   return { apiKey: record.apiKey, apiUrl: record.apiUrl, mode: record.mode };
 }
-
-/** Loads the stored key, if any. Missing file, or a file with no key → undefined. */
-export function loadStoredKey(
-  dir: string,
-  stderr: { write: (chunk: string) => unknown } = process.stderr,
-): string | undefined {
-  return loadStoredConfig(dir, stderr).apiKey;
-}
-
-/** Loads the stored mode, if one was ever chosen. */
-export function loadStoredMode(
-  dir: string,
-  stderr: { write: (chunk: string) => unknown } = process.stderr,
-): KinjotMode | undefined {
-  return loadStoredConfig(dir, stderr).mode;
-}

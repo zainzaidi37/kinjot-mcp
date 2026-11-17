@@ -1849,12 +1849,6 @@ export * from './sqlite-ddl.js';
  */
 export * from './save-note.js';
 
-// The shared LocalStore fixture format lives in `./local-store-fixtures` and is
-// deliberately NOT re-exported here. This barrel is imported by the SPA (via
-// local-store.ts, for the column map), so anything exported from it can end up
-// in the app bundle — and a test-only Zod schema has no business shipping to a
-// browser. Import that module by path.
-
 /**
  * The `/admin` dashboard's response contract (`plans/admin-analytics.md` §5).
  *

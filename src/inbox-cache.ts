@@ -47,10 +47,6 @@ export function cachedMuteState(
   return entry.key_muted || !entry.send_kinds.includes(kind) ? 'muted' : 'enabled';
 }
 
-export function cachedMute(dir: string, config: Config, kind: string, now = Date.now()): boolean {
-  return cachedMuteState(dir, config, kind, now) === 'muted';
-}
-
 export function refreshMute(
   dir: string,
   config: Config,
