@@ -202,7 +202,9 @@ and the client setup is printed.
 For scripts or a custom API path, pass the endpoint yourself, and the printed
 configs keep the endpoint you chose. `init` and `key` take a custom endpoint
 only from `--api-url`: with `KINJOT_API_URL` set to another endpoint and no
-flag, they refuse before sending the key anywhere.
+flag, they refuse before sending the key anywhere. With a custom `--api-url`,
+`init` takes the key only from `--key`, and refuses rather than send a
+`KINJOT_API_KEY` left in your shell.
 
 ```bash
 npx kinjot init --api-url https://your-project.supabase.co/functions/v1/mcp-api --key kj_live_your_key

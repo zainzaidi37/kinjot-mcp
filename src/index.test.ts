@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { NotesApi } from './api.js';
 import { serveBackend } from './backend.js';
@@ -47,7 +48,7 @@ describe('resolveConfig', () => {
     expect(loadStored).not.toHaveBeenCalled();
   });
 
-  it('K6: a stored hosted key is never sent to a self-host KINJOT_API_URL left in the env (#1883)', async () => {
+  it("K6: a hosted key is never sent to a self-host endpoint it wasn't saved or typed with (#1883, #1904)", async () => {
     const selfHostUrl = 'https://byo-operator.example/functions/v1/mcp-api';
     const hostedKey = `kj_live_${'H'.repeat(43)}`;
     const dir = mkdtempSync(join(tmpdir(), 'kinjot-endpoint-'));
@@ -99,6 +100,74 @@ describe('resolveConfig', () => {
       }
       expect(fetchMock).not.toHaveBeenCalled();
       expect(readFileSync(configFilePath(dir), 'utf8')).toBe(saved);
+
+      // The mirror (#1904): a hosted KINJOT_API_KEY left in the shell is never
+      // sent to the endpoint `init-selfhost` sets up; the piped key is, and
+      // with nothing piped nothing is sent.
+      const selfKey = `kj_live_${'B'.repeat(43)}`;
+      const notices = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const logs = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const failures = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const stdin = Object.getOwnPropertyDescriptor(process, 'stdin');
+      const pipe = (text: string, isTTY = false) => {
+        const input = Object.assign(Readable.from([Buffer.from(text)]), {
+          isTTY,
+          setRawMode: () => input,
+        });
+        Object.defineProperty(process, 'stdin', { configurable: true, value: input });
+      };
+      try {
+        vi.unstubAllEnvs();
+        vi.stubEnv('KINJOT_CONFIG_DIR', dir);
+        vi.stubEnv('KINJOT_API_KEY', hostedKey);
+        vi.stubEnv('KINJOT_API_URL', undefined);
+        pipe(`${selfKey}\n`);
+        await main(['init-selfhost', '--api-url', selfHostUrl]);
+        expect(process.exitCode).toBe(exitCode);
+        const sent = (fetchMock.mock.calls as unknown as [string, RequestInit][]).map(
+          ([url, init]) => [url, new Headers(init.headers).get('authorization')] as const,
+        );
+        expect(sent.length).toBeGreaterThan(0);
+        expect(
+          sent.every(([url, auth]) => url.startsWith(selfHostUrl) && auth === `Bearer ${selfKey}`),
+        ).toBe(true);
+        expect(notices.mock.calls.join('')).toContain(
+          'KINJOT_API_KEY is set in your environment, but `kinjot init-selfhost` never sends it',
+        );
+
+        fetchMock.mockClear();
+        pipe('');
+        await main(['init-selfhost', '--api-url', selfHostUrl]);
+        expect(process.exitCode).toBe(1);
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        // On a TTY, a typed project ref and an empty hidden answer send nothing.
+        process.exitCode = exitCode;
+        pipe(`${'p'.repeat(20)}\r\r`, true);
+        await main(['init-selfhost']);
+        expect(process.exitCode).toBe(1);
+        expect(fetchMock).not.toHaveBeenCalled();
+
+        // `kinjot init` with a self-host --api-url and no --key refuses the env key.
+        process.exitCode = exitCode;
+        failures.mockClear();
+        await main(['init', '--api-url', selfHostUrl]);
+        expect(failures).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'KINJOT_API_KEY is set in your environment, but `kinjot init` only sends a key',
+          ),
+        );
+        expect(process.exitCode).toBe(1);
+        expect(fetchMock).not.toHaveBeenCalled();
+      } finally {
+        process.exitCode = exitCode;
+        if (stdin) Object.defineProperty(process, 'stdin', stdin);
+        notices.mockRestore();
+        out.mockRestore();
+        logs.mockRestore();
+        failures.mockRestore();
+      }
     } finally {
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();

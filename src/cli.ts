@@ -306,7 +306,20 @@ async function printKeyAccess(api: NotesApi, write: (line: string) => void): Pro
 
 async function runInit(flags: Map<string, string>, env: NodeJS.ProcessEnv): Promise<void> {
   rejectUnknownFlags(flags, ['key', 'api-url']);
-  const key = flags.get('key') ?? env.KINJOT_API_KEY ?? '';
+  const apiUrl = pastedKeyApiUrl('init', flags, env);
+  // A `KINJOT_API_KEY` left in the shell is usually a hosted key, so a
+  // non-default `--api-url` takes the key only from `--key`, or the hosted key
+  // would be sent to that operator and printed into its setup lines (#1904).
+  const envKey = apiUrl === DEFAULT_API_URL ? env.KINJOT_API_KEY : undefined;
+  if (!flags.has('key') && envKey === undefined && env.KINJOT_API_KEY?.trim()) {
+    throw new Error(
+      `KINJOT_API_KEY is set in your environment, but \`kinjot init\` only sends a key to ` +
+        `an endpoint named with --api-url (${apiUrl}) when it is passed with --key, so nothing ` +
+        'was sent. Either pass `--key <key>` for that endpoint, or drop --api-url to check the ' +
+        'hosted key.',
+    );
+  }
+  const key = flags.get('key') ?? envKey ?? '';
   if (!API_KEY_PATTERN.test(key)) {
     throw new Error(
       key === ''
@@ -314,7 +327,6 @@ async function runInit(flags: Map<string, string>, env: NodeJS.ProcessEnv): Prom
         : 'that key does not look like a Kinjot key (expected kj_live_ + 43 characters)',
     );
   }
-  const apiUrl = pastedKeyApiUrl('init', flags, env);
   const api = new NotesApi({ apiUrl, apiKey: key });
 
   process.stdout.write('Checking the key against the API… ');
@@ -475,13 +487,21 @@ export async function runInitSelfHost(deps: RunSelfHostDeps = {}): Promise<void>
   const isTTY = deps.isTTY ?? Boolean((input as unknown as { isTTY?: boolean }).isTTY);
   const needsProjectInput =
     !flags.has('api-url') && !env.KINJOT_API_URL?.trim() && !deps.readProject;
-  const suppliedKey = flags.get('key') ?? env.KINJOT_API_KEY?.trim();
+  // A `KINJOT_API_KEY` left in the shell is usually a hosted key, and sending it
+  // to the endpoint this command sets up leaks it to that operator (#1904), so
+  // the key comes only from `--key`, the hidden prompt or piped stdin.
+  const suppliedKey = flags.get('key');
+  if (!suppliedKey && env.KINJOT_API_KEY?.trim()) {
+    (deps.stderr ?? process.stderr).write(
+      'KINJOT_API_KEY is set in your environment, but `kinjot init-selfhost` never sends it to a self-host project. Pass `--key <key>` or paste the key at the prompt.\n',
+    );
+  }
   const needsKeyInput = !suppliedKey && !deps.readHidden;
   let piped: string[] | undefined;
   if (
     !isTTY &&
     ((!flags.has('api-url') && !env.KINJOT_API_URL?.trim() && !deps.readProject) ||
-      (!flags.has('key') && !env.KINJOT_API_KEY?.trim() && !deps.readHidden))
+      (!flags.has('key') && !deps.readHidden))
   ) {
     piped = await readPipedLines(input);
   }
