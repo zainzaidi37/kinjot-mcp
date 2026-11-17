@@ -24,7 +24,10 @@
  * Dependency-free: the Edge emitter refuses any import here.
  */
 
-/** Exact-format secrets, each replaced whole with `[redacted]`. */
+/**
+ * Exact-format secrets, each replaced whole with `[redacted]` (escaped where
+ * it would complete Markdown: {@link markerAt}).
+ */
 const EXACT_SECRETS: readonly RegExp[] = [
   /\bkj_live_[A-Za-z0-9]{43}\b/g,
   /\bsk-(?:ant-|proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b/g,
@@ -62,6 +65,47 @@ export function isSecretNamePart(part: string): boolean {
 /** The marker every pass writes in place of a secret. */
 const MARKER = '[redacted]';
 
+/**
+ * {@link MARKER} with its brackets backslash-escaped, which Markdown renders as
+ * the text `[redacted]`. Its brackets open and close nothing only when an even
+ * run of backslashes precedes it, which {@link markerAt} ensures.
+ */
+const ESCAPED_MARKER = '\\[redacted\\]';
+
+/**
+ * The marker for an exact-format secret spanning `start` to `end` in `text`
+ * (#1829). Directly after `!` or `]`, or directly before `(`, `[` or `:`, the
+ * literal marker would complete CommonMark structure the input did not have:
+ * an image (`![redacted](url)`, `![redacted][x]`), an inline link
+ * (`[redacted](url)`), a full or collapsed reference link (`[redacted][x]`,
+ * `[x][redacted]`) or a link reference definition (`[redacted]: url`). There it
+ * is {@link ESCAPED_MARKER}; everywhere else, plain {@link MARKER}. After an
+ * odd run of backslashes, the last would escape the marker's first character
+ * (leaving `[` live in the escaped form, or `]` live to close an earlier `[`
+ * in the plain one), so one more backslash precedes either marker there.
+ *
+ * Not closed: a plain marker, from this pass or the URL and assignment passes,
+ * is a shortcut reference link when the same text carries a `[redacted]: url`
+ * definition. That makes a link, never an image, since a marker after `!` is
+ * always escaped.
+ */
+function markerAt(text: string, start: number, end: number): string {
+  let backslashes = 0;
+  while (text[start - 1 - backslashes] === '\\') backslashes += 1;
+  const before = text[start - 1];
+  const after = text[end];
+  const marker =
+    before === '!' || before === ']' || after === '(' || after === '[' || after === ':'
+      ? ESCAPED_MARKER
+      : MARKER;
+  return backslashes % 2 === 1 ? `\\${marker}` : marker;
+}
+
+/** Whether `text` already holds a marker an earlier pass wrote. */
+function holdsMarker(text: string): boolean {
+  return text.includes(MARKER) || text.includes(ESCAPED_MARKER);
+}
+
 /** A password in URL user-info. A raw slash cannot occur there, so paths survive. */
 const URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/[^\s/:@]*:)[^\s/@]+(@[^\s/]+)/gi;
 
@@ -84,13 +128,16 @@ export function scrubExactSecretsCounted(value: string): { text: string; redacte
       unit.length === 2 ? unit : '\uFFFD',
     );
   for (const pattern of EXACT_SECRETS) {
-    result = result.replace(pattern, () => {
+    const text = result;
+    result = result.replace(pattern, (match: string, ...rest: unknown[]) => {
       redacted += 1;
-      return MARKER;
+      // The offset is the first number after any capture groups.
+      const offset = rest.find((argument) => typeof argument === 'number') as number;
+      return markerAt(text, offset, offset + match.length);
     });
   }
   result = result.replace(URL_USERINFO, (match: string, head: string, tail: string) => {
-    if (!match.slice(head.length, match.length - tail.length).includes(MARKER)) redacted += 1;
+    if (!holdsMarker(match.slice(head.length, match.length - tail.length))) redacted += 1;
     return `${head}${MARKER}${tail}`;
   });
   result = result.replace(
@@ -99,7 +146,7 @@ export function scrubExactSecretsCounted(value: string): { text: string; redacte
       if (/^(?:PWD|OLDPWD)$/i.test(name)) return match;
       if (!name.split('_').some(isSecretNamePart)) return match;
       if (isCodeValue(content)) return match;
-      if (!content.includes(MARKER)) redacted += 1;
+      if (!holdsMarker(content)) redacted += 1;
       return `${prefix}${name}${assignment}${MARKER}${suffix}`;
     },
   );
@@ -108,7 +155,8 @@ export function scrubExactSecretsCounted(value: string): { text: string; redacte
 
 /**
  * Replaces NUL and lone surrogates with U+FFFD, then every exact-format secret,
- * URL user-info password and secret-named assignment with `[redacted]`.
+ * URL user-info password and secret-named assignment with `[redacted]` (or
+ * `\[redacted\]`, #1829: {@link markerAt}).
  */
 export function scrubExactSecrets(value: string): string {
   return scrubExactSecretsCounted(value).text;
