@@ -194,7 +194,8 @@ export function buildServer(
           '"jot this down", "jot it", "save jot", "save it as a jot", "save it to Kinjot" or ' +
           '"add to Kinjot". Do NOT use for "remember this", "save to memory" or ' +
           'CLAUDE.md/memory-file requests; those belong to your own memory system. The repo name ' +
-          'is added as a tag automatically. Prefer tags echoed by earlier jot results when they apply.',
+          'is added as a tag automatically. Prefer tags echoed by earlier jot results when they apply. ' +
+          'When jotting a fix or procedure, preserve the symptom, relevant version, decisive cause and verification command when known from the conversation; never invent missing details or delay capture to obtain them.',
         inputSchema: {
           title: z.string().describe('Short descriptive title'),
           body: z.string().describe('Markdown'),
@@ -365,7 +366,7 @@ export function buildServer(
       description:
         "Search the user's Kinjot notes by keyword (matches titles, bodies and tags). Use ONLY " +
         'when the user explicitly asks to find or read their jots / Kinjot notes. Returns up to 5 ' +
-        'compact matches, no bodies. Present the list and let the user pick which note to read ' +
+        'compact matches ordered by relevance, no bodies. Present the list and let the user pick which note to read ' +
         'with get_jot; only when exactly one note matches may you fetch it directly. ' +
         AUTOSAVE_DISCOVERY,
       inputSchema: {
@@ -382,7 +383,7 @@ export function buildServer(
         const lines = notes.map(formatListLine);
         const header =
           total > notes.length
-            ? `Found ${total} matching jots; showing the ${notes.length} newest (refine the query for others):`
+            ? `Found ${total} matching jots; showing the ${notes.length} most relevant (refine the query for others):`
             : `Found ${total} matching jot${total === 1 ? '' : 's'}:`;
         return textResult(`${header}\n${lines.join('\n')}\nRead one in full with get_jot.`);
       } catch (error) {
