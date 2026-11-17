@@ -21,12 +21,7 @@ import {
 import type { SavedNote } from '../api.js';
 import { normalizeTags } from '../tagging.js';
 import { isUuidShapeAnyCase } from '../uuid.js';
-import {
-  busyRefusal,
-  isSqliteBusy,
-  MAX_SUPPORTED_SCHEMA_VERSION,
-  type LocalLibrary,
-} from './library.js';
+import { busyRefusal, isSqliteBusy, type LocalLibrary } from './library.js';
 import type { SqliteDatabase } from './runtime.js';
 
 export interface LocalSaveNoteInput {
@@ -101,23 +96,6 @@ function inWriteTransaction<T>(db: SqliteDatabase, work: () => T): T {
     }
     throw error;
   }
-}
-
-/**
- * Runs the ops as one transaction.
- *
- * All-or-nothing is not a nicety: `mcp_save_note` rolls back the folder and
- * tags it had already created when the note insert conflicts, and the local
- * side must leave the library exactly as it found it.
- */
-export function applySaveNotePlan(
-  db: SqliteDatabase,
-  ops: readonly SaveNoteOp[],
-  schemaVersion = MAX_SUPPORTED_SCHEMA_VERSION,
-): void {
-  inWriteTransaction(db, () => {
-    for (const op of ops) applyOp(db, op, schemaVersion);
-  });
 }
 
 /**

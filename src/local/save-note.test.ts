@@ -1,22 +1,16 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { planSaveNote } from '../core/index.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openLocalLibrary, type LocalLibrary } from './library.js';
-import { FIXTURE_WORKSPACE, makeLibraryFixture } from './library-fixture.js';
-import { applySaveNotePlan, saveNoteLocally } from './save-note.js';
+import { makeLibraryFixture } from './library-fixture.js';
+import { saveNoteLocally } from './save-note.js';
 
 /**
  * The local applier. The *planning* is `planSaveNote`'s, which matches
  * `mcp_save_note` row-for-row — what these cases pin is what this package adds: that the plan is applied in
  * order, all-or-nothing, into the library the handshake opened.
  */
-
-const WORKSPACE = FIXTURE_WORKSPACE;
-// The lock-contention tests below fork a holder and can wait out the 5 s busy
-// bound, so each keeps its own 30 s limit: the public kinjot-mcp mirror runs
-// src/ without this package's vitest.config.ts (#1121).
 
 function rows(library: LocalLibrary, table: string): Record<string, unknown>[] {
   // rowid, so insertion order is what is compared (note_tags has no `id`).
@@ -34,6 +28,7 @@ describe('saveNoteLocally', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     library.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -65,65 +60,47 @@ describe('saveNoteLocally', () => {
     expect(rows(library, 'tags')).toHaveLength(1);
     expect(rows(library, 'note_tags')).toHaveLength(2);
   });
-});
 
-describe('applySaveNotePlan', () => {
-  let dir: string;
-  let library: LocalLibrary;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kinjot-apply-'));
-    makeLibraryFixture(dir);
-    library = openLocalLibrary(dir);
-  });
-
-  afterEach(() => {
-    library.close();
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('unwinds the whole plan when an op fails mid-way — the file is untouched', () => {
-    // The RPC has no update path: a note id that already exists is a unique
-    // violation that rolls back the folder and tag the call had already
-    // created. The local applier owes the same, and this is what proves it is
-    // transactional rather than incidentally ordered.
-    let counter = 0;
-    const context = {
-      userId: WORKSPACE,
-      folders: [],
-      tags: [],
-      now: '2026-08-05T10:00:00.000Z',
-      newId: () => `planned-${++counter}`,
-    };
+  it('unwinds the whole save when the note insert fails mid-way — the file is untouched', () => {
+    // All-or-nothing is not a nicety: `mcp_save_note` has no update path, so a
+    // note id that already exists is a unique violation that rolls back the
+    // folder the call had already created. The local save must leave the
+    // library exactly as it found it. The folder is the one write before the
+    // failing note insert (`planSaveNote` plans the tag and its link after the
+    // note, as the RPC does), so the order is pinned too: planned after the
+    // note, the folder would never be written and the snapshot would match
+    // without any rollback.
     const noteId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    applySaveNotePlan(
-      library.db,
-      planSaveNote(context, { id: noteId, title: 'first', body: '' }).ops,
-    );
+    saveNoteLocally(library, { id: noteId, title: 'first', body: '' });
 
-    const before = {
+    const snapshot = () => ({
       notes: rows(library, 'notes'),
       folders: rows(library, 'folders'),
       tags: rows(library, 'tags'),
       note_tags: rows(library, 'note_tags'),
-    };
-
-    const retry = planSaveNote(context, {
-      id: noteId,
-      title: 'second',
-      body: '',
-      folder: 'Late Folder',
-      tags: ['late-tag'],
     });
-    // The folder and the tag are planned *before* the note insert that fails.
-    expect(retry.ops[0]!.table).toBe('folders');
-    expect(() => applySaveNotePlan(library.db, retry.ops)).toThrow();
+    const before = snapshot();
+    expect(before.notes.map((note) => [note.id, note.title])).toEqual([[noteId, 'first']]);
+    expect([before.folders, before.tags, before.note_tags]).toEqual([[], [], []]);
 
-    expect({
-      notes: rows(library, 'notes'),
-      folders: rows(library, 'folders'),
-      tags: rows(library, 'tags'),
-      note_tags: rows(library, 'note_tags'),
-    }).toEqual(before);
+    const inserts: string[] = [];
+    const prepare = library.db.prepare.bind(library.db);
+    vi.spyOn(library.db, 'prepare').mockImplementation((sql: string) => {
+      const table = /^INSERT (?:OR IGNORE )?INTO "(\w+)"/.exec(sql)?.[1];
+      if (table) inserts.push(table);
+      return prepare(sql);
+    });
+    expect(() =>
+      saveNoteLocally(library, {
+        id: noteId,
+        title: 'second',
+        body: '',
+        folder: 'Late Folder',
+        tags: ['late-tag'],
+      }),
+    ).toThrow(/UNIQUE constraint failed: notes\.id/);
+
+    expect(inserts).toEqual(['folders', 'notes']);
+    expect(snapshot()).toEqual(before);
   });
 });
